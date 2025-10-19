@@ -1,0 +1,6 @@
+go to review branch
+execute the following: 
+
+npm install
+npm install firebase
+npm start
