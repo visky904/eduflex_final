@@ -1,6 +1,11 @@
-go to review branch
-execute the following: 
-
-npm install
-npm install firebase
+in eduflex, in eduflex-core
+npm install sockjs-client stompjs
 npm start
+
+in backend, in src/main/java
+in EduflexCoreApplication.java
+there will be one run|debug command above "public static void main", click on run
+
+first run backend, then frontend
+
+
