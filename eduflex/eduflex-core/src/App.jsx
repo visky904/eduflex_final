@@ -334,12 +334,41 @@ const ShortFeedbackCreator = ({ activity, setActivity, liveResults, onDelete }) 
     );
 };
 
+const WordleCreator = ({ activity, setActivity }) => {
+    return (
+        <div className="bg-gray-900 bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-700 text-gray-200">
+            <h3 className="text-xl font-semibold text-white mb-4">Wordle Game Creator</h3>
+            <p className="text-gray-400 mb-2">
+                Choose a secret 5-letter word. Students will have 6 attempts to guess it.
+            </p>
+            <input
+                type="text"
+                maxLength="5"
+                className="w-full p-3 border border-gray-600 rounded-lg bg-gray-800 text-white text-center text-2xl tracking-widest uppercase focus:ring-2 focus:ring-red-500 transition"
+                placeholder="APPLE"
+                value={activity.wordleAnswer || ''}
+                onChange={(e) => {
+                    const val = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
+                    setActivity(prev => ({ ...prev, wordleAnswer: val }));
+                }}
+            />
+            <p className="mt-4 text-sm text-gray-400">
+                Once you click <span className="font-semibold text-white">Start Interaction</span>, the word is locked and students can start guessing!
+            </p>
+        </div>
+    );
+};
 
 // --- Teacher View ---
 const TeacherView = ({ setView, roomCode }) => {
     const [sessionTopic, setSessionTopic] = useState('');
     const [currentActivityType, setCurrentActivityType] = useState('mcq');
-    
+    const [wordleStats, setWordleStats] = useState({
+  total: 0,
+  attempting: 0,
+  won: 0,
+  lost: 0,
+});
     const [showParticipants, setShowParticipants] = useState(false);
     const [showResults, setShowResults] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -372,10 +401,32 @@ const TeacherView = ({ setView, roomCode }) => {
             });
             setLiveResponses(responses);
         });
+        
 
         return () => unsubscribe();
     }, [roomCode]);
+useEffect(() => {
+  if (!roomCode || activity.type !== "wordle") return;
 
+  const progressCol = collection(db, "sessions", roomCode, "wordleProgress");
+  const q = query(progressCol);
+
+  const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    let total = 0, won = 0, lost = 0, attempting = 0;
+
+    querySnapshot.forEach((doc) => {
+      total++;
+      const data = doc.data();
+      if (data.status === "won") won++;
+      else if (data.status === "lost") lost++;
+      else attempting++;
+    });
+
+    setWordleStats({ total, won, lost, attempting });
+  });
+
+  return () => unsubscribe();
+}, [roomCode, activity.type]);
     useEffect(() => {
         const baseSettings = {
             markCorrect: false, allowMultiple: false, profanityFilter: true, reviewStyle: 'emoji',
@@ -390,7 +441,16 @@ const TeacherView = ({ setView, roomCode }) => {
              setActivity({ ...newActivity, type: 'reviews', settings: { ...baseSettings, reviewStyle: 'emoji' } });
         } else if (currentActivityType === 'feedback') {
             setActivity({ ...newActivity, type: 'feedback', settings: { ...baseSettings, profanityFilter: true }});
+        } else if (currentActivityType === 'wordle') {
+            setActivity({
+                ...newActivity,
+                type: 'wordle',
+                question: 'Enter the secret 5-letter word for Wordle',
+                settings: { ...baseSettings },
+                wordleAnswer: '',
+            });
         }
+        
     }, [currentActivityType]);
     
     const liveResults = useMemo(() => {
@@ -447,6 +507,7 @@ const TeacherView = ({ setView, roomCode }) => {
             case 'wordcloud': return <WordCloudCreator activity={activity} setActivity={setActivity} liveResults={liveResults} />;
             case 'reviews': return <ReviewsCreator activity={activity} setActivity={setActivity} />;
             case 'feedback': return <ShortFeedbackCreator activity={activity} setActivity={setActivity} liveResults={liveResults} onDelete={handleDeleteFeedback} />;
+            case 'wordle': return <WordleCreator activity={activity} setActivity={setActivity} />;
             default: return null;
         }
     };
@@ -499,6 +560,7 @@ const TeacherView = ({ setView, roomCode }) => {
         { id: 'wordcloud', name: 'Word Cloud', icon: <IconCloud /> },
         { id: 'reviews', name: 'Reviews', icon: <IconSmile /> },
         { id: 'feedback', name: 'Short Feedback', icon: <IconMessageSquare /> },
+        { id: 'wordle', name: 'Wordle Game', icon: <IconListCheck /> },
     ];
 
     return (
@@ -628,6 +690,17 @@ const TeacherView = ({ setView, roomCode }) => {
                     </div>
                 </div>
             )}
+            {activity.type === "wordle" && (
+  <div className="mt-4 bg-gray-800 p-4 rounded-lg text-center border border-gray-700">
+    <h4 className="text-lg font-bold text-white mb-2">Wordle Progress</h4>
+    <div className="flex justify-around text-gray-300">
+      <div><span className="text-green-400 font-bold text-xl">{wordleStats.won}</span><p>Correct</p></div>
+      <div><span className="text-yellow-400 font-bold text-xl">{wordleStats.attempting}</span><p>Attempting</p></div>
+      <div><span className="text-red-400 font-bold text-xl">{wordleStats.lost}</span><p>Failed</p></div>
+      <div><span className="text-white font-bold text-xl">{wordleStats.total}</span><p>Total</p></div>
+    </div>
+  </div>
+)}
             
             {/* Participants Modal */}
             {showParticipants && (
@@ -644,6 +717,86 @@ const TeacherView = ({ setView, roomCode }) => {
                         <button onClick={() => setShowParticipants(false)} className="mt-6 w-full bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button>
                     </div>
                 </div>
+            )}
+        </div>
+    );
+};
+const WordleGame = ({ word, onSubmit, roomCode, studentId }) => {
+  const [guesses, setGuesses] = useState([]);
+  const [currentGuess, setCurrentGuess] = useState("");
+  const [gameOver, setGameOver] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (currentGuess.length !== 5 || gameOver) return;
+
+    const guess = currentGuess.toUpperCase();
+    const result = guess.split("").map((ch, i) => {
+      if (ch === word[i]) return { letter: ch, color: "bg-green-500" };
+      else if (word.includes(ch)) return { letter: ch, color: "bg-yellow-500" };
+      else return { letter: ch, color: "bg-gray-700" };
+    });
+
+    const newGuesses = [...guesses, result];
+    setGuesses(newGuesses);
+
+    let status = "attempting";
+
+    if (guess === word) {
+      setGameOver(true);
+      setMessage("🎉 Correct! You guessed the word!");
+      status = "won";
+    } else if (newGuesses.length >= 6) {
+      setGameOver(true);
+      setMessage(`❌ Out of attempts! The word was ${word}`);
+      status = "lost";
+    }
+
+    // ✅ Update Firestore with progress
+    if (roomCode && studentId) {
+      const progressRef = doc(db, "sessions", roomCode, "wordleProgress", studentId);
+      await setDoc(progressRef, {
+        attempts: newGuesses.length,
+        lastGuess: guess,
+        status,
+        timestamp: new Date(),
+      });
+    }
+
+    setCurrentGuess("");
+  };
+
+    return (
+        <div className="text-center animate-fade-in">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Guess the Word</h2>
+            <div className="space-y-2 mb-6">
+                {guesses.map((guess, i) => (
+                    <div key={i} className="flex justify-center space-x-1">
+                        {guess.map((g, j) => (
+                            <div key={j} className={`w-10 h-10 flex items-center justify-center text-white text-xl font-bold ${g.color} rounded`}>
+                                {g.letter}
+                            </div>
+                        ))}
+                    </div>
+                ))}
+            </div>
+            {!gameOver ? (
+                <form onSubmit={handleSubmit}>
+                    <input
+                        type="text"
+                        maxLength="5"
+                        className="p-3 border-2 border-gray-400 rounded-lg text-center text-2xl tracking-widest uppercase focus:ring-2 focus:ring-red-500 transition"
+                        placeholder="Enter guess"
+                        value={currentGuess}
+                        onChange={(e) => setCurrentGuess(e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))}
+                    />
+                    <button type="submit" className="ml-4 px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">
+                        Submit
+                    </button>
+                </form>
+            ) : (
+                <p className="mt-4 text-xl font-semibold text-gray-700">{message}</p>
             )}
         </div>
     );
@@ -807,6 +960,15 @@ const StudentView = ({ setView }) => {
                         </form>
                    </div>
                 )
+                case 'wordle':
+      return (
+           <WordleGame
+               word={currentActivity.wordleAnswer?.toUpperCase() || ''}
+               onSubmit={(guess) => console.log('Guess submitted:', guess)}
+               roomCode={enteredCode}
+  studentId={window.crypto.randomUUID()}
+          />
+           );
             default:
                  return <p>Unknown activity type</p>;
         }
