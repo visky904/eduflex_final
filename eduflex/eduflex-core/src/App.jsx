@@ -55,6 +55,14 @@ const playSound = (type) => {
                 oscillator.start(audioContext.currentTime);
                 oscillator.stop(audioContext.currentTime + 0.2);
                 break;
+            default:
+                // Default notification sound
+                oscillator.frequency.value = 500;
+                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.2);
+                break;
         }
     } catch (e) {
         // Silently fail if audio not supported
@@ -478,113 +486,215 @@ const IconCopy = () => (
 // --- Teacher's Interaction Creation Components ---
 
 const McqCreator = ({ activity, setActivity }) => {
+    const handleAddQuestion = () => {
+        const newQuestion = {
+            id: Date.now(),
+            question: '',
+            image: null,
+            options: [{ text: '', isCorrect: false }, { text: '', isCorrect: false }]
+        };
+        setActivity(prev => ({
+            ...prev,
+            questions: [...(prev.questions || []), newQuestion],
+            currentQuestionIndex: (prev.questions || []).length
+        }));
+    };
+
+    const handleUpdateQuestion = (id, field, value) => {
+        setActivity(prev => ({
+            ...prev,
+            questions: prev.questions.map(q => q.id === id ? { ...q, [field]: value } : q)
+        }));
+    };
+
     const handleAddOption = () => {
-        setActivity(prev => ({ ...prev, options: [...prev.options, { text: '', isCorrect: false }] }));
+        const currentQ = activity.questions?.[activity.currentQuestionIndex || 0];
+        if (!currentQ) return;
+        
+        setActivity(prev => ({
+            ...prev,
+            questions: prev.questions.map(q => 
+                q.id === currentQ.id 
+                    ? { ...q, options: [...q.options, { text: '', isCorrect: false }] }
+                    : q
+            )
+        }));
     };
 
     const handleRemoveOption = (index) => {
-        if (activity.options.length <= 2) return;
-        const newOptions = activity.options.filter((_, i) => i !== index);
-        setActivity(prev => ({ ...prev, options: newOptions }));
+        const currentQ = activity.questions?.[activity.currentQuestionIndex || 0];
+        if (!currentQ || currentQ.options.length <= 2) return;
+        
+        setActivity(prev => ({
+            ...prev,
+            questions: prev.questions.map(q => 
+                q.id === currentQ.id 
+                    ? { ...q, options: q.options.filter((_, i) => i !== index) }
+                    : q
+            )
+        }));
     };
 
     const handleOptionChange = (index, text) => {
-        const newOptions = [...activity.options];
-        newOptions[index].text = text;
-        setActivity(prev => ({ ...prev, options: newOptions }));
+        const currentQ = activity.questions?.[activity.currentQuestionIndex || 0];
+        if (!currentQ) return;
+        
+        setActivity(prev => ({
+            ...prev,
+            questions: prev.questions.map(q => {
+                if (q.id === currentQ.id) {
+                    const newOptions = [...q.options];
+                    newOptions[index].text = text;
+                    return { ...q, options: newOptions };
+                }
+                return q;
+            })
+        }));
     };
 
     const handleCorrectToggle = (index) => {
-        const newOptions = [...activity.options];
-        if (!activity.settings.allowMultiple) {
-            newOptions.forEach((opt, i) => opt.isCorrect = i === index);
-        } else {
-            newOptions[index].isCorrect = !newOptions[index].isCorrect;
-        }
-        setActivity(prev => ({ ...prev, options: newOptions }));
+        const currentQ = activity.questions?.[activity.currentQuestionIndex || 0];
+        if (!currentQ) return;
+        
+        setActivity(prev => ({
+            ...prev,
+            questions: prev.questions.map(q => {
+                if (q.id === currentQ.id) {
+                    const newOptions = [...q.options];
+                    if (!activity.settings.allowMultiple) {
+                        newOptions.forEach((opt, i) => opt.isCorrect = i === index);
+                    } else {
+                        newOptions[index].isCorrect = !newOptions[index].isCorrect;
+                    }
+                    return { ...q, options: newOptions };
+                }
+                return q;
+            })
+        }));
     };
 
     const handleImageUpload = (e) => {
-        if (e.target.files && e.target.files[0]) {
-            const imageUrl = URL.createObjectURL(e.target.files[0]);
-            setActivity(prev => ({ ...prev, image: imageUrl }));
-        }
+        const currentQ = activity.questions?.[activity.currentQuestionIndex || 0];
+        if (!currentQ || !e.target.files || !e.target.files[0]) return;
+        
+        const imageUrl = URL.createObjectURL(e.target.files[0]);
+        setActivity(prev => ({
+            ...prev,
+            questions: prev.questions.map(q => 
+                q.id === currentQ.id ? { ...q, image: imageUrl } : q
+            )
+        }));
     };
+
+    const currentQ = activity.questions?.[activity.currentQuestionIndex || 0];
     
     return (
-        <div className="bg-gray-900 bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-700 animate-fade-in text-gray-200">
-            <h3 className="text-xl font-semibold text-white mb-4">MCQ / Poll Creator</h3>
-            <textarea
-                className="w-full p-3 border border-gray-600 rounded-lg bg-gray-800 text-white focus:ring-2 focus:ring-red-500 transition placeholder-gray-400"
-                rows="3"
-                placeholder="Type your question here..."
-                value={activity.question}
-                onChange={(e) => setActivity(prev => ({ ...prev, question: e.target.value }))}
-            ></textarea>
-            
-            {activity.image && (
-                <div className="mt-4 relative">
-                    <img src={activity.image} alt="upload-preview" className="rounded-lg max-h-48 w-auto"/>
-                    <button onClick={() => setActivity(prev => ({...prev, image: null}))} className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1.5 hover:bg-red-700 transition">
-                        <IconTrash />
-                    </button>
+        <div className="bg-white bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-200 animate-fade-in text-gray-700">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">MCQ / Poll Creator</h3>
+                <button
+                    onClick={handleAddQuestion}
+                    className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition flex items-center"
+                >
+                    <IconPlus /> Add Question
+                </button>
+            </div>
+
+            {activity.questions && activity.questions.length > 0 && (
+                <div className="mb-6">
+                    <div className="flex space-x-2 overflow-x-auto pb-2">
+                        {activity.questions.map((q, idx) => (
+                            <button
+                                key={q.id}
+                                onClick={() => setActivity(prev => ({ ...prev, currentQuestionIndex: idx }))}
+                                className={`px-4 py-2 rounded-lg whitespace-nowrap transition ${
+                                    activity.currentQuestionIndex === idx
+                                        ? 'bg-teal-600 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-600'
+                                }`}
+                            >
+                                Q{idx + 1}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             )}
 
-            <div className="mt-4 space-y-3">
-                <h4 className="font-medium text-gray-300">Options</h4>
-                {activity.options.map((option, index) => (
-                    <div key={index} className="flex items-center space-x-3">
-                        {activity.settings.markCorrect && (
-                            <input
-                                type={activity.settings.allowMultiple ? "checkbox" : "radio"}
-                                name="correct-option"
-                                checked={option.isCorrect}
-                                onChange={() => handleCorrectToggle(index)}
-                                className="form-checkbox h-5 w-5 text-red-600 bg-gray-700 border-gray-600 rounded focus:ring-red-500"
-                            />
-                        )}
-                        <input
-                            type="text"
-                            className="flex-grow p-2 border border-gray-600 rounded-lg bg-gray-800 text-white placeholder-gray-400"
-                            placeholder={`Option ${index + 1}`}
-                            value={option.text}
-                            onChange={(e) => handleOptionChange(index, e.target.value)}
-                        />
-                        {activity.options.length > 2 && (
-                            <button onClick={() => handleRemoveOption(index)} className="text-red-500 hover:text-red-400 transition">
+            {currentQ && (
+                <div>
+                    <textarea
+                        className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 focus:ring-2 focus:ring-teal-500 transition placeholder-gray-500"
+                        rows="3"
+                        placeholder="Type your question here..."
+                        value={currentQ.question}
+                        onChange={(e) => handleUpdateQuestion(currentQ.id, 'question', e.target.value)}
+                    ></textarea>
+            
+                    {currentQ.image && (
+                        <div className="mt-4 relative">
+                            <img src={currentQ.image} alt="upload-preview" className="rounded-lg max-h-48 w-auto"/>
+                            <button onClick={() => handleUpdateQuestion(currentQ.id, 'image', null)} className="absolute top-2 right-2 bg-teal-600 text-white rounded-full p-1.5 hover:bg-teal-700 transition">
                                 <IconTrash />
                             </button>
-                        )}
-                    </div>
-                ))}
-            </div>
-
-            <button onClick={handleAddOption} className="mt-4 flex items-center text-red-500 hover:text-red-400 font-medium transition">
-                <IconPlus /> Add Option
-            </button>
-
-            <div className="mt-6 border-t border-gray-700 pt-4">
-                <div className="flex items-center justify-between">
-                    <h4 className="font-medium text-gray-300 flex items-center"><IconSettings />Settings</h4>
-                    <label htmlFor="image-upload" className="flex items-center text-red-500 hover:text-red-400 font-medium transition cursor-pointer">
-                        <IconImage /> Add Image
-                        <input id="image-upload" type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
-                    </label>
-                </div>
-                <div className="mt-4 space-y-3">
-                    <label className="flex items-center space-x-3 cursor-pointer">
-                        <input type="checkbox" className="form-checkbox h-5 w-5 text-red-600 bg-gray-700 border-gray-600 rounded focus:ring-red-500" checked={activity.settings.markCorrect} onChange={e => setActivity(prev => ({ ...prev, settings: { ...prev.settings, markCorrect: e.target.checked } }))} />
-                        <span>Enable 'Mark Correct Answer' (MCQ Mode)</span>
-                    </label>
-                    {activity.settings.markCorrect && (
-                         <label className="flex items-center space-x-3 cursor-pointer pl-8">
-                            <input type="checkbox" className="form-checkbox h-5 w-5 text-red-600 bg-gray-700 border-gray-600 rounded focus:ring-red-500" checked={activity.settings.allowMultiple} onChange={e => setActivity(prev => ({ ...prev, settings: { ...prev.settings, allowMultiple: e.target.checked } }))} />
-                            <span>Allow multiple correct answers</span>
-                        </label>
+                        </div>
                     )}
+
+                    <div className="mt-4 space-y-3">
+                        <h4 className="font-medium text-gray-600">Options</h4>
+                        {currentQ.options.map((option, index) => (
+                            <div key={index} className="flex items-center space-x-3">
+                                {activity.settings.markCorrect && (
+                                    <input
+                                        type={activity.settings.allowMultiple ? "checkbox" : "radio"}
+                                        name={`correct-option-${currentQ.id}`}
+                                        checked={option.isCorrect}
+                                        onChange={() => handleCorrectToggle(index)}
+                                        className="form-checkbox h-5 w-5 text-teal-600 bg-gray-100 border-gray-300 rounded focus:ring-teal-500"
+                                    />
+                                )}
+                                <input
+                                    type="text"
+                                    className="flex-grow p-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-500"
+                                    placeholder={`Option ${index + 1}`}
+                                    value={option.text}
+                                    onChange={(e) => handleOptionChange(index, e.target.value)}
+                                />
+                                {currentQ.options.length > 2 && (
+                                    <button onClick={() => handleRemoveOption(index)} className="text-teal-500 hover:text-teal-400 transition">
+                                        <IconTrash />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    <button onClick={handleAddOption} className="mt-4 flex items-center text-teal-500 hover:text-teal-400 font-medium transition">
+                        <IconPlus /> Add Option
+                    </button>
+
+                    <div className="mt-6 border-t border-gray-200 pt-4">
+                        <div className="flex items-center justify-between">
+                            <h4 className="font-medium text-gray-600 flex items-center"><IconSettings />Settings</h4>
+                            <label htmlFor={`image-upload-${currentQ.id}`} className="flex items-center text-teal-500 hover:text-teal-400 font-medium transition cursor-pointer">
+                                <IconImage /> Add Image
+                                <input id={`image-upload-${currentQ.id}`} type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
+                            </label>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input type="checkbox" className="form-checkbox h-5 w-5 text-teal-600 bg-gray-100 border-gray-300 rounded focus:ring-teal-500" checked={activity.settings.markCorrect} onChange={e => setActivity(prev => ({ ...prev, settings: { ...prev.settings, markCorrect: e.target.checked } }))} />
+                                <span>Enable 'Mark Correct Answer' (MCQ Mode)</span>
+                            </label>
+                            {activity.settings.markCorrect && (
+                                 <label className="flex items-center space-x-3 cursor-pointer pl-8">
+                                    <input type="checkbox" className="form-checkbox h-5 w-5 text-teal-600 bg-gray-100 border-gray-300 rounded focus:ring-teal-500" checked={activity.settings.allowMultiple} onChange={e => setActivity(prev => ({ ...prev, settings: { ...prev.settings, allowMultiple: e.target.checked } }))} />
+                                    <span>Allow multiple correct answers</span>
+                                </label>
+                            )}
+                        </div>
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };
@@ -599,10 +709,10 @@ const WordCloudCreator = ({ activity, setActivity, liveResults }) => {
 
     return (
         <div>
-            <div className="bg-gray-900 bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-700 animate-fade-in text-gray-200">
-                <h3 className="text-xl font-semibold text-white mb-4">Word Cloud Creator</h3>
+            <div className="bg-white bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-200 animate-fade-in text-gray-700">
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">Word Cloud Creator</h3>
                 <textarea
-                    className="w-full p-3 border border-gray-600 rounded-lg bg-gray-800 text-white focus:ring-2 focus:ring-red-500 transition placeholder-gray-400"
+                    className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 focus:ring-2 focus:ring-teal-500 transition placeholder-gray-500"
                     rows="3"
                     placeholder="Enter your prompt for the word cloud..."
                     value={activity.question}
@@ -611,26 +721,26 @@ const WordCloudCreator = ({ activity, setActivity, liveResults }) => {
                 {activity.image && (
                     <div className="mt-4 relative">
                         <img src={activity.image} alt="upload-preview" className="rounded-lg max-h-48 w-auto"/>
-                        <button onClick={() => setActivity(prev => ({...prev, image: null}))} className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1.5 hover:bg-red-700 transition">
+                        <button onClick={() => setActivity(prev => ({...prev, image: null}))} className="absolute top-2 right-2 bg-teal-600 text-white rounded-full p-1.5 hover:bg-teal-700 transition">
                             <IconTrash />
                         </button>
                     </div>
                 )}
-                <div className="mt-6 border-t border-gray-700 pt-4">
+                <div className="mt-6 border-t border-gray-200 pt-4">
                     <div className="flex items-center justify-between">
-                        <h4 className="font-medium text-gray-300 flex items-center"><IconSettings />Settings</h4>
-                        <label htmlFor="image-upload-wc" className="flex items-center text-red-500 hover:text-red-400 font-medium transition cursor-pointer">
+                        <h4 className="font-medium text-gray-600 flex items-center"><IconSettings />Settings</h4>
+                        <label htmlFor="image-upload-wc" className="flex items-center text-teal-500 hover:text-teal-400 font-medium transition cursor-pointer">
                             <IconImage /> Add Image
                             <input id="image-upload-wc" type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
                         </label>
                     </div>
                     <div className="mt-4 space-y-3">
                         <label className="flex items-center space-x-3 cursor-pointer">
-                            <input type="checkbox" className="form-checkbox h-5 w-5 text-red-600 bg-gray-700 border-gray-600 rounded focus:ring-red-500" checked={activity.settings.allowMultiple} onChange={e => setActivity(prev => ({...prev, settings: {...prev.settings, allowMultiple: e.target.checked}}))} />
+                            <input type="checkbox" className="form-checkbox h-5 w-5 text-teal-600 bg-gray-100 border-gray-300 rounded focus:ring-teal-500" checked={activity.settings.allowMultiple} onChange={e => setActivity(prev => ({...prev, settings: {...prev.settings, allowMultiple: e.target.checked}}))} />
                             <span>Allow multiple entries per student</span>
                         </label>
                         <label className="flex items-center space-x-3 cursor-pointer">
-                            <input type="checkbox" className="form-checkbox h-5 w-5 text-red-600 bg-gray-700 border-gray-600 rounded focus:ring-red-500" checked={activity.settings.profanityFilter} onChange={e => setActivity(prev => ({...prev, settings: {...prev.settings, profanityFilter: e.target.checked}}))} />
+                            <input type="checkbox" className="form-checkbox h-5 w-5 text-teal-600 bg-gray-100 border-gray-300 rounded focus:ring-teal-500" checked={activity.settings.profanityFilter} onChange={e => setActivity(prev => ({...prev, settings: {...prev.settings, profanityFilter: e.target.checked}}))} />
                             <span>Enable profanity filter</span>
                         </label>
                     </div>
@@ -638,8 +748,8 @@ const WordCloudCreator = ({ activity, setActivity, liveResults }) => {
             </div>
 
             {liveResults && liveResults.words && liveResults.words.length > 0 && (
-                <div className="mt-8 p-6 bg-gray-900 bg-opacity-75 rounded-lg border border-gray-700">
-                   <h4 className="text-lg font-semibold text-white mb-4">Live Word Cloud</h4>
+                <div className="mt-8 p-6 bg-white bg-opacity-75 rounded-lg border border-gray-200">
+                   <h4 className="text-lg font-semibold text-gray-900 mb-4">Live Word Cloud</h4>
                    <div className="text-center p-4 min-h-[10rem] flex items-center justify-center flex-wrap">
                        {liveResults.words.map((w,i) => (
                            <span key={i} style={{fontSize: `${Math.min(48, Math.max(12, 10 + w.value*2))}px`, margin: '4px 8px', display: 'inline-block', fontWeight: '600', color: `hsl(${200 + i*25}, 80%, 70%)`}}>
@@ -655,30 +765,30 @@ const WordCloudCreator = ({ activity, setActivity, liveResults }) => {
 
 
 const ReviewsCreator = ({ activity, setActivity }) => (
-    <div className="bg-gray-900 bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-700 animate-fade-in text-gray-200">
-        <h3 className="text-xl font-semibold text-white mb-4">Reviews / Feedback Creator</h3>
+    <div className="bg-white bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-200 animate-fade-in text-gray-700">
+        <h3 className="text-xl font-semibold text-gray-900 mb-4">Reviews / Feedback Creator</h3>
         <textarea
-            className="w-full p-3 border border-gray-600 rounded-lg bg-gray-800 text-white focus:ring-2 focus:ring-red-500 transition placeholder-gray-400"
+            className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 focus:ring-2 focus:ring-teal-500 transition placeholder-gray-500"
             rows="3"
             placeholder="Enter your prompt for feedback..."
             value={activity.question}
             onChange={(e) => setActivity(prev => ({ ...prev, question: e.target.value }))}
         ></textarea>
         
-        <div className="mt-6 border-t border-gray-700 pt-4">
-            <h4 className="font-medium text-gray-300 flex items-center"><IconSettings />Settings</h4>
+        <div className="mt-6 border-t border-gray-200 pt-4">
+            <h4 className="font-medium text-gray-600 flex items-center"><IconSettings />Settings</h4>
             <div className="mt-4">
-                <span className="text-gray-300">Review Style</span>
+                <span className="text-gray-600">Review Style</span>
                 <div className="mt-2 flex rounded-lg shadow-sm">
                     <button
                         onClick={() => setActivity(prev => ({...prev, settings: {...prev.settings, reviewStyle: 'emoji'}}))}
-                        className={`px-4 py-2 text-sm font-medium rounded-l-lg transition ${activity.settings.reviewStyle === 'emoji' ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-200 hover:bg-gray-600'}`}
+                        className={`px-4 py-2 text-sm font-medium rounded-l-lg transition ${activity.settings.reviewStyle === 'emoji' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-600'}`}
                     >
                         😄 Emojis
                     </button>
                     <button
                         onClick={() => setActivity(prev => ({...prev, settings: {...prev.settings, reviewStyle: 'stars'}}))}
-                        className={`px-4 py-2 text-sm font-medium rounded-r-lg transition ${activity.settings.reviewStyle === 'stars' ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-200 hover:bg-gray-600'}`}
+                        className={`px-4 py-2 text-sm font-medium rounded-r-lg transition ${activity.settings.reviewStyle === 'stars' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-600'}`}
                     >
                         ⭐️ Stars
                     </button>
@@ -691,21 +801,21 @@ const ReviewsCreator = ({ activity, setActivity }) => (
 const ShortFeedbackCreator = ({ activity, setActivity, liveResults, onDelete }) => {
     return (
         <div>
-            <div className="bg-gray-900 bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-700 animate-fade-in text-gray-200">
-                <h3 className="text-xl font-semibold text-white mb-4">Short Feedback Creator</h3>
+            <div className="bg-white bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-200 animate-fade-in text-gray-700">
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">Short Feedback Creator</h3>
                 <textarea
-                    className="w-full p-3 border border-gray-600 rounded-lg bg-gray-800 text-white focus:ring-2 focus:ring-red-500 transition placeholder-gray-400"
+                    className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 focus:ring-2 focus:ring-teal-500 transition placeholder-gray-500"
                     rows="3"
                     placeholder="Enter your question or prompt (e.g., How was your day?)"
                     value={activity.question}
                     onChange={(e) => setActivity(prev => ({ ...prev, question: e.target.value }))}
                 ></textarea>
                 
-                <div className="mt-6 border-t border-gray-700 pt-4">
-                    <h4 className="font-medium text-gray-300 flex items-center"><IconSettings />Settings</h4>
+                <div className="mt-6 border-t border-gray-200 pt-4">
+                    <h4 className="font-medium text-gray-600 flex items-center"><IconSettings />Settings</h4>
                     <div className="mt-4 space-y-3">
                          <label className="flex items-center space-x-3 cursor-pointer">
-                            <input type="checkbox" className="form-checkbox h-5 w-5 text-red-600 bg-gray-700 border-gray-600 rounded focus:ring-red-500" checked={activity.settings.profanityFilter} onChange={e => setActivity(prev => ({...prev, settings: {...prev.settings, profanityFilter: e.target.checked}}))} />
+                            <input type="checkbox" className="form-checkbox h-5 w-5 text-teal-600 bg-gray-100 border-gray-300 rounded focus:ring-teal-500" checked={activity.settings.profanityFilter} onChange={e => setActivity(prev => ({...prev, settings: {...prev.settings, profanityFilter: e.target.checked}}))} />
                             <span>Enable profanity filter</span>
                         </label>
                     </div>
@@ -713,13 +823,13 @@ const ShortFeedbackCreator = ({ activity, setActivity, liveResults, onDelete }) 
             </div>
 
             {liveResults && liveResults.responses && liveResults.responses.length > 0 && (
-                <div className="mt-8 p-6 bg-gray-900 bg-opacity-75 rounded-lg border border-gray-700">
-                    <h4 className="text-lg font-semibold text-white mb-4">Live Feedback</h4>
+                <div className="mt-8 p-6 bg-white bg-opacity-75 rounded-lg border border-gray-200">
+                    <h4 className="text-lg font-semibold text-gray-900 mb-4">Live Feedback</h4>
                     <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
                         {liveResults.responses.map((res) => (
-                           <div key={res.id} className="bg-gray-800 p-3 rounded-lg flex justify-between items-center text-gray-300">
+                           <div key={res.id} className="bg-gray-50 p-3 rounded-lg flex justify-between items-center text-gray-600">
                                <p>{res.answer}</p>
-                               <button onClick={() => onDelete(res.id)} className="text-red-500 hover:text-red-400 p-1 rounded-full transition-colors">
+                               <button onClick={() => onDelete(res.id)} className="text-teal-500 hover:text-teal-400 p-1 rounded-full transition-colors">
                                     <IconTrash />
                                </button>
                            </div>
@@ -733,15 +843,15 @@ const ShortFeedbackCreator = ({ activity, setActivity, liveResults, onDelete }) 
 
 const WordleCreator = ({ activity, setActivity }) => {
     return (
-        <div className="bg-gray-900 bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-700 text-gray-200">
-            <h3 className="text-xl font-semibold text-white mb-4">Wordle Game Creator</h3>
-            <p className="text-gray-400 mb-2">
+        <div className="bg-white bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-200 text-gray-700">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Wordle Game Creator</h3>
+            <p className="text-gray-500 mb-2">
                 Choose a secret 5-letter word. Students will have 6 attempts to guess it.
             </p>
             <input
                 type="text"
                 maxLength="5"
-                className="w-full p-3 border border-gray-600 rounded-lg bg-gray-800 text-white text-center text-2xl tracking-widest uppercase focus:ring-2 focus:ring-red-500 transition"
+                className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 text-center text-2xl tracking-widest uppercase focus:ring-2 focus:ring-teal-500 transition"
                 placeholder="APPLE"
                 value={activity.wordleAnswer || ''}
                 onChange={(e) => {
@@ -749,8 +859,8 @@ const WordleCreator = ({ activity, setActivity }) => {
                     setActivity(prev => ({ ...prev, wordleAnswer: val }));
                 }}
             />
-            <p className="mt-4 text-sm text-gray-400">
-                Once you click <span className="font-semibold text-white">Start Interaction</span>, the word is locked and students can start guessing!
+            <p className="mt-4 text-sm text-gray-500">
+                Once you click <span className="font-semibold text-gray-900">Start Interaction</span>, the word is locked and students can start guessing!
             </p>
         </div>
     );
@@ -791,12 +901,12 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
 
     return (
         <div>
-            <div className="bg-gray-900 bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-700 animate-fade-in text-gray-200">
+            <div className="bg-white bg-opacity-75 p-6 rounded-lg shadow-lg border border-gray-200 animate-fade-in text-gray-700">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-semibold text-white">Q&A Session Creator</h3>
+                    <h3 className="text-xl font-semibold text-gray-900">Q&A Session Creator</h3>
                     <button
                         onClick={handleAddQuestion}
-                        className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition flex items-center"
+                        className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition flex items-center"
                     >
                         <IconPlus /> Add Question
                     </button>
@@ -811,8 +921,8 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
                                     onClick={() => setActivity(prev => ({ ...prev, currentQuestionIndex: idx }))}
                                     className={`px-4 py-2 rounded-lg whitespace-nowrap transition ${
                                         activity.currentQuestionIndex === idx
-                                            ? 'bg-red-600 text-white'
-                                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                            ? 'bg-teal-600 text-white'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-600'
                                     }`}
                                 >
                                     Q{idx + 1}
@@ -825,7 +935,7 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
                 {currentQ && (
                     <div className="space-y-4">
                         <textarea
-                            className="w-full p-3 border border-gray-600 rounded-lg bg-gray-800 text-white focus:ring-2 focus:ring-red-500 transition placeholder-gray-400"
+                            className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 focus:ring-2 focus:ring-teal-500 transition placeholder-gray-500"
                             rows="3"
                             placeholder="Enter your question..."
                             value={currentQ.text}
@@ -834,11 +944,11 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
 
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="text-sm text-gray-400 block mb-2">Question Type</label>
+                                <label className="text-sm text-gray-500 block mb-2">Question Type</label>
                                 <select
                                     value={currentQ.type}
                                     onChange={(e) => handleUpdateQuestion(currentQ.id, 'type', e.target.value)}
-                                    className="w-full p-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-red-500 transition"
+                                    className="w-full p-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-teal-500 transition"
                                 >
                                     <option value="short">Short Answer</option>
                                     <option value="long">Long Answer</option>
@@ -847,14 +957,14 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
                             </div>
 
                             <div>
-                                <label className="text-sm text-gray-400 block mb-2">Time Limit (sec)</label>
+                                <label className="text-sm text-gray-500 block mb-2">Time Limit (sec)</label>
                                 <input
                                     type="number"
                                     min="10"
                                     max="300"
                                     value={currentQ.timeLimit}
                                     onChange={(e) => handleUpdateQuestion(currentQ.id, 'timeLimit', parseInt(e.target.value))}
-                                    className="w-full p-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-red-500 transition"
+                                    className="w-full p-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-teal-500 transition"
                                 />
                             </div>
                         </div>
@@ -862,14 +972,14 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
                         {currentQ.type === 'multiple' && (
                             <div className="space-y-2">
                                 <div className="flex justify-between items-center">
-                                    <label className="text-sm text-gray-400">Options</label>
+                                    <label className="text-sm text-gray-500">Options</label>
                                     <button
                                         onClick={() => {
                                             const newOptions = currentQ.options || [];
                                             newOptions.push('');
                                             handleUpdateQuestion(currentQ.id, 'options', newOptions);
                                         }}
-                                        className="text-red-500 hover:text-red-400 text-sm transition"
+                                        className="text-teal-500 hover:text-teal-400 text-sm transition"
                                     >
                                         + Add Option
                                     </button>
@@ -884,7 +994,7 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
                                                 newOptions[idx] = e.target.value;
                                                 handleUpdateQuestion(currentQ.id, 'options', newOptions);
                                             }}
-                                            className="flex-1 p-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-red-500 transition"
+                                            className="flex-1 p-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-teal-500 transition"
                                             placeholder={`Option ${idx + 1}`}
                                         />
                                         <button
@@ -892,7 +1002,7 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
                                                 const newOptions = currentQ.options.filter((_, i) => i !== idx);
                                                 handleUpdateQuestion(currentQ.id, 'options', newOptions);
                                             }}
-                                            className="text-red-500 hover:text-red-400 p-2 transition"
+                                            className="text-teal-500 hover:text-teal-400 p-2 transition"
                                         >
                                             <IconTrash />
                                         </button>
@@ -902,21 +1012,21 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
                         )}
 
                         <div>
-                            <label className="text-sm text-gray-400 block mb-2">
+                            <label className="text-sm text-gray-500 block mb-2">
                                 {currentQ.type === 'multiple' ? 'Correct Answer' : 'Expected Answer (for reference)'}
                             </label>
                             <input
                                 type="text"
                                 value={currentQ.correctAnswer}
                                 onChange={(e) => handleUpdateQuestion(currentQ.id, 'correctAnswer', e.target.value)}
-                                className="w-full p-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-red-500 transition"
+                                className="w-full p-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-teal-500 transition"
                                 placeholder="Enter correct/reference answer"
                             />
                         </div>
 
                         <button
                             onClick={() => handleRemoveQuestion(currentQ.id)}
-                            className="w-full mt-4 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition flex items-center justify-center"
+                            className="w-full mt-4 bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition flex items-center justify-center"
                         >
                             <IconTrash /> Delete This Question
                         </button>
@@ -925,14 +1035,14 @@ const QaCreator = ({ activity, setActivity, liveResults, onDelete }) => {
             </div>
 
             {liveResults && liveResults.responses && liveResults.responses.length > 0 && (
-                <div className="mt-8 p-6 bg-gray-900 bg-opacity-75 rounded-lg border border-gray-700">
-                    <h4 className="text-lg font-semibold text-white mb-4">Live Responses ({liveResults.responses.length})</h4>
+                <div className="mt-8 p-6 bg-white bg-opacity-75 rounded-lg border border-gray-200">
+                    <h4 className="text-lg font-semibold text-gray-900 mb-4">Live Responses ({liveResults.responses.length})</h4>
                     <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
                         {liveResults.responses.map((res) => (
-                            <div key={res.id} className="bg-gray-800 p-3 rounded-lg">
-                                <p className="text-gray-300 font-medium">{res.studentName || 'Student'}</p>
-                                <p className="text-gray-400 text-sm">{res.answer}</p>
-                                <button onClick={() => onDelete(res.id)} className="text-red-500 hover:text-red-400 text-sm mt-2 transition">
+                            <div key={res.id} className="bg-gray-50 p-3 rounded-lg">
+                                <p className="text-gray-600 font-medium">{res.studentName || 'Student'}</p>
+                                <p className="text-gray-500 text-sm">{res.answer}</p>
+                                <button onClick={() => onDelete(res.id)} className="text-teal-500 hover:text-teal-400 text-sm mt-2 transition">
                                     Delete
                                 </button>
                             </div>
@@ -968,11 +1078,13 @@ const generateSessionReport = (activity, responses, topic, roomCode) => {
                 answerCounts[r.answer] = (answerCounts[r.answer] || 0) + 1;
             });
             
-            const correctAnswer = activity.options.find(opt => opt.isCorrect)?.text;
+            const currentMcqQ = activity.questions?.[0] || activity;
+            const correctAnswer = (currentMcqQ.options || activity.options || []).find(opt => opt.isCorrect)?.text;
             const correctCount = answerCounts[correctAnswer] || 0;
             
             report.analysis = {
-                question: activity.question,
+                question: currentMcqQ.question || activity.question,
+                questions: activity.questions || [],
                 totalResponses: responses.length,
                 answerDistribution: answerCounts,
                 correctAnswer: correctAnswer,
@@ -1245,7 +1357,18 @@ useEffect(() => {
         const newActivity = { question: '', image: null, options: [], settings: baseSettings };
 
         if (currentActivityType === 'mcq') {
-            setActivity({ ...newActivity, type: 'mcq', options: [{ text: '', isCorrect: false }, { text: '', isCorrect: false }], settings: { ...baseSettings, markCorrect: true } });
+            setActivity({ 
+                ...newActivity, 
+                type: 'mcq', 
+                questions: [{ 
+                    id: 1, 
+                    question: '', 
+                    image: null,
+                    options: [{ text: '', isCorrect: false }, { text: '', isCorrect: false }] 
+                }],
+                currentQuestionIndex: 0,
+                settings: { ...baseSettings, markCorrect: true } 
+            });
         } else if (currentActivityType === 'wordcloud') {
              setActivity({ ...newActivity, type: 'wordcloud', settings: { ...baseSettings, allowMultiple: true, profanityFilter: false } });
         } else if (currentActivityType === 'reviews') {
@@ -1278,7 +1401,9 @@ useEffect(() => {
         const total = liveResponses.length;
 
         if (activity.type === 'mcq') {
-            const responses = activity.options.map(option => {
+            const currentMcqQ = activity.questions?.[activity.currentQuestionIndex || 0] || activity;
+            const options = currentMcqQ.options || activity.options || [];
+            const responses = options.map(option => {
                 const count = liveResponses.filter(r => r.answer === option.text).length;
                 return { option: option.text, count };
             });
@@ -1354,6 +1479,13 @@ useEffect(() => {
                 alert('Please enter at least one question for the Q&A session.');
                 return;
             }
+        } else if (activity.type === 'mcq') {
+            // For MCQ, check if there are questions with text and options
+            if (!activity.questions || activity.questions.length === 0 || 
+                !activity.questions.some(q => q.question && q.question.trim() !== '')) {
+                alert('Please enter at least one question for the MCQ session.');
+                return;
+            }
         } else {
             // For other activities, check activity.question
             if (!activity.question || activity.question.trim() === '') {
@@ -1371,10 +1503,16 @@ useEffect(() => {
         });
         await Promise.all(deletePromises);
 
+        // For MCQ and Q&A with multiple questions, start with question index 0
+        const activityToSend = { ...activity };
+        if ((activity.type === 'mcq' || activity.type === 'qa') && activity.questions) {
+            activityToSend.currentQuestionIndex = 0;
+        }
+
         const sessionRef = doc(db, 'sessions', roomCode);
         await updateDoc(sessionRef, {
             isSessionLive: true,
-            currentActivity: activity,
+            currentActivity: activityToSend,
         });
         setIsSessionLive(true);
     };
@@ -1411,6 +1549,39 @@ useEffect(() => {
         
         setIsSessionLive(false);
         setShowReport(true); // Show report modal
+    };
+
+    const handleNextQuestion = async () => {
+        if (!activity.questions || activity.questions.length === 0) return;
+        
+        const currentIndex = activity.currentQuestionIndex || 0;
+        const nextIndex = currentIndex + 1;
+        
+        if (nextIndex >= activity.questions.length) {
+            alert('This is the last question. Click "End Session" to finish.');
+            return;
+        }
+        
+        // Clear responses for next question
+        const responsesCol = collection(db, 'sessions', roomCode, 'responses');
+        const q = query(responsesCol);
+        const querySnapshot = await getDocs(q);
+        const deletePromises = [];
+        querySnapshot.forEach((doc) => {
+            deletePromises.push(deleteDoc(doc.ref));
+        });
+        await Promise.all(deletePromises);
+        
+        // Update activity with next question index
+        const updatedActivity = { ...activity, currentQuestionIndex: nextIndex };
+        setActivity(updatedActivity);
+        
+        const sessionRef = doc(db, 'sessions', roomCode);
+        await updateDoc(sessionRef, {
+            currentActivity: updatedActivity,
+        });
+        
+        playSound('notification');
     };
 
     const handleDeleteFeedback = async (id) => {
@@ -1545,6 +1716,7 @@ useEffect(() => {
             .slice(0, 10); // Top 10 players
 
         setLeaderboard(leaderboardData);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [liveResponses, enableGamification, isSessionLive, activity]);
 
     const sidebarItems = [
@@ -1557,19 +1729,19 @@ useEffect(() => {
     ];
 
     return (
-        <div className="flex h-screen bg-red-900 font-sans">
+        <div className="flex h-screen bg-gradient-to-br from-teal-50 via-blue-50 to-white font-sans">
             {/* Sidebar */}
-            <aside className={`bg-gray-900 text-gray-300 flex flex-col transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
-                <div className={`flex items-center justify-between p-4 border-b border-gray-700 ${isSidebarOpen ? 'h-16' : ''}`}>
-                    {isSidebarOpen && <h1 className="text-xl font-bold text-white whitespace-nowrap">Activities</h1>}
-                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 rounded-lg hover:bg-gray-700 transition-colors">
+            <aside className={`bg-white text-gray-600 flex flex-col transition-all duration-300 ease-in-out shadow-lg border-r border-gray-200 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
+                <div className={`flex items-center justify-between p-4 border-b border-gray-200 ${isSidebarOpen ? 'h-16' : ''}`}>
+                    {isSidebarOpen && <h1 className="text-xl font-bold text-teal-700 whitespace-nowrap">Activities</h1>}
+                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 rounded-lg hover:bg-teal-50 transition-colors text-teal-600">
                         {isSidebarOpen ? <IconChevronLeft /> : <div className="text-2xl font-bold">»</div>}
                     </button>
                 </div>
                 <nav className="flex-1 px-2 py-4 space-y-2">
                     {sidebarItems.map(item => (
                         <button key={item.id} onClick={() => setCurrentActivityType(item.id)}
-                            className={`w-full flex items-center p-3 rounded-lg transition-colors text-left ${isSidebarOpen ? '' : 'justify-center'} ${currentActivityType === item.id ? 'bg-red-600 text-white' : 'hover:bg-gray-700 hover:text-white'}`}
+                            className={`w-full flex items-center p-3 rounded-lg transition-colors text-left ${isSidebarOpen ? '' : 'justify-center'} ${currentActivityType === item.id ? 'bg-teal-600 text-white shadow-md' : 'hover:bg-teal-50 hover:text-teal-700'}`}
                         >
                             {item.icon}
                             {isSidebarOpen && <span className="whitespace-nowrap">{item.name}</span>}
@@ -1579,14 +1751,14 @@ useEffect(() => {
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 flex flex-col overflow-y-auto bg-red-900">
-                 <header className="bg-gray-900 shadow-lg p-4 border-b border-gray-700 sticky top-0 z-10">
+            <main className="flex-1 flex flex-col overflow-y-auto bg-white">
+                 <header className="bg-white shadow-md p-4 border-b border-gray-200 sticky top-0 z-10">
                     {/* Session Topic - First Row */}
                     <div className="flex justify-center mb-4">
                         <input 
                             type="text"
                             placeholder="Enter Session Topic..."
-                            className="w-full max-w-md text-xl font-semibold text-white bg-transparent border-b-2 border-gray-600 focus:border-red-500 outline-none p-2 transition placeholder-gray-400 text-center"
+                            className="w-full max-w-md text-xl font-semibold text-gray-900 bg-transparent border-b-2 border-gray-300 focus:border-teal-500 outline-none p-2 transition placeholder-gray-500 text-center"
                             value={sessionTopic}
                             onChange={e => setSessionTopic(e.target.value)}
                         />
@@ -1595,16 +1767,16 @@ useEffect(() => {
                     {/* Room Code and Buttons - Second Row */}
                     <div className="flex flex-wrap items-center justify-center gap-3">
                          <div className="text-center">
-                            <span className="text-xs text-gray-400">Room Code</span>
+                            <span className="text-xs text-gray-500">Room Code</span>
                             <div className="flex items-center gap-2">
-                                <p className="text-2xl font-bold tracking-widest text-red-500">{roomCode}</p>
+                                <p className="text-2xl font-bold tracking-widest text-teal-500">{roomCode}</p>
                                 <button 
                                     onClick={() => {
                                         navigator.clipboard.writeText(roomCode);
                                         setLinkCopied(true);
                                         setTimeout(() => setLinkCopied(false), 2000);
                                     }}
-                                    className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg transition"
+                                    className="bg-gray-100 hover:bg-gray-600 text-gray-900 p-2 rounded-lg transition"
                                     title="Copy room code"
                                 >
                                     📋
@@ -1613,15 +1785,15 @@ useEffect(() => {
                             </div>
                         </div>
 
-                        <div className="h-8 w-px bg-gray-700"></div>
+                        <div className="h-8 w-px bg-gray-100"></div>
 
-                        <button onClick={() => setShowShareLink(true)} className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition" title="Share session link">
+                        <button onClick={() => setShowShareLink(true)} className="flex items-center bg-blue-600 text-gray-900 px-4 py-2 rounded-lg hover:bg-blue-700 transition" title="Share session link">
                             <IconLink /> <span className="ml-1">Share Link</span>
                         </button>
-                        <button onClick={() => setShowParticipants(true)} className="flex items-center bg-gray-700 text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-600 transition">
+                        <button onClick={() => setShowParticipants(true)} className="flex items-center bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-600 transition">
                             <IconUsers /> <span className="ml-1">Participants ({liveResponses.length})</span>
                         </button>
-                        <button onClick={() => setShowHistory(true)} className="flex items-center bg-purple-700 text-white px-4 py-2 rounded-lg hover:bg-purple-800 transition" title="View session history">
+                        <button onClick={() => setShowHistory(true)} className="flex items-center bg-purple-700 text-gray-900 px-4 py-2 rounded-lg hover:bg-purple-800 transition" title="View session history">
                             📊 <span className="ml-1">History</span>
                         </button>
                         <button 
@@ -1629,17 +1801,17 @@ useEffect(() => {
                                 playSound('click');
                                 setShowLeaderboard(true);
                             }} 
-                            className="flex items-center bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition relative" 
+                            className="flex items-center bg-yellow-600 text-gray-900 px-4 py-2 rounded-lg hover:bg-yellow-700 transition relative" 
                             title="View leaderboard"
                         >
                             🏆 <span className="ml-1">Leaderboard</span>
                             {leaderboard.length > 0 && (
-                                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+                                <span className="absolute -top-2 -right-2 bg-teal-500 text-gray-900 text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
                                     {leaderboard.length}
                                 </span>
                             )}
                         </button>
-                        <label className="flex items-center gap-2 bg-gray-700 text-white px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-600 transition" title="Toggle gamification">
+                        <label className="flex items-center gap-2 bg-gray-100 text-gray-900 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-600 transition" title="Toggle gamification">
                             <input 
                                 type="checkbox" 
                                 checked={enableGamification} 
@@ -1657,7 +1829,7 @@ useEffect(() => {
                                     setView('home');
                                 }
                             }} 
-                            className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition"
+                            className="bg-gray-100 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-600 transition"
                         >
                            🚪 Exit
                         </button>
@@ -1668,11 +1840,11 @@ useEffect(() => {
                     {renderCreator()}
                 </div>
                 
-                 <footer className="bg-gray-900 p-4 border-t border-gray-700 flex items-center justify-center sticky bottom-0 z-10">
+                 <footer className="bg-white p-4 border-t border-gray-200 flex items-center justify-center sticky bottom-0 z-10">
                     {isSessionLive && (
                         <div className="mr-6 text-center">
                              <p className="font-bold text-green-500">Interaction is Live!</p>
-                             <button onClick={() => setShowResults(true)} className="text-sm text-red-500 hover:underline">
+                             <button onClick={() => setShowResults(true)} className="text-sm text-teal-500 hover:underline">
                                  View Analysis Modal
                             </button>
                         </div>
@@ -1680,16 +1852,33 @@ useEffect(() => {
                     <button 
                         onClick={handleStartSession}
                         disabled={isSessionLive}
-                        className={`px-8 py-3 text-lg font-bold rounded-full transition text-white ${isSessionLive ? 'bg-gray-500 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 shadow-lg transform hover:-translate-y-1'}`}
+                        className={`px-8 py-3 text-lg font-bold rounded-full transition text-gray-900 ${isSessionLive ? 'bg-gray-500 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 shadow-lg transform hover:-translate-y-1'}`}
                     >
                         {isSessionLive ? 'Live' : 'Start Interaction'}
                     </button>
+                    {isSessionLive && (activity.type === 'mcq' || activity.type === 'qa') && activity.questions && activity.questions.length > 1 && (
+                        <button 
+                            onClick={handleNextQuestion}
+                            disabled={(activity.currentQuestionIndex || 0) >= activity.questions.length - 1}
+                            className={`ml-4 px-6 py-3 text-lg font-bold rounded-full transition shadow-lg transform hover:-translate-y-1 ${
+                                (activity.currentQuestionIndex || 0) >= activity.questions.length - 1
+                                    ? 'bg-gray-500 cursor-not-allowed text-gray-600'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-gray-900'
+                            }`}
+                        >
+                            ➡️ Next Question ({(activity.currentQuestionIndex || 0) + 1}/{activity.questions.length})
+                        </button>
+                    )}
                     {isSessionLive && (
                          <button 
-                            onClick={handleStopSession}
-                            className="ml-4 px-8 py-3 text-lg font-bold rounded-full transition bg-gray-600 hover:bg-gray-700 text-white shadow-lg transform hover:-translate-y-1"
+                            onClick={() => {
+                                if (window.confirm('Are you sure you want to stop the session? This will end it for all students.')) {
+                                    handleStopSession();
+                                }
+                            }}
+                            className="ml-4 px-8 py-3 text-lg font-bold rounded-full transition bg-gray-600 hover:bg-gray-100 text-gray-900 shadow-lg transform hover:-translate-y-1"
                         >
-                            Stop
+                            ⏹️ End Session
                         </button>
                     )}
                 </footer>
@@ -1697,19 +1886,29 @@ useEffect(() => {
 
             {/* Analysis Modal */}
             {showResults && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
-                    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-6 w-full max-w-lg text-white">
-                        <h3 className="text-2xl font-bold mb-4 text-white">Live Results</h3>
-                        <p className="mb-4 text-gray-300">Total Responses: <span className="font-bold">{liveResults.total}</span></p>
+                <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
+                    <div className="bg-white border border-gray-300 rounded-lg shadow-2xl p-6 w-full max-w-lg text-gray-900">
+                        <h3 className="text-2xl font-bold mb-2 text-teal-700">Live Results</h3>
+                        {(activity.type === 'mcq' || activity.type === 'qa') && activity.questions && activity.questions.length > 1 && (
+                            <div className="mb-4 p-3 bg-teal-50 border border-teal-200 rounded-lg text-center">
+                                <p className="text-lg font-bold text-teal-700">
+                                    Question {(activity.currentQuestionIndex || 0) + 1} of {activity.questions.length}
+                                </p>
+                                <p className="text-sm text-teal-600 mt-1">
+                                    {activity.questions[activity.currentQuestionIndex || 0]?.question || ''}
+                                </p>
+                            </div>
+                        )}
+                        <p className="mb-4 text-gray-600">Total Responses: <span className="font-bold">{liveResults.total}</span></p>
                         <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
                            {activity.type === 'mcq' && liveResults.responses.map((res, i) => (
                                <div key={i}>
                                    <div className="flex justify-between mb-1">
-                                       <span className="text-base font-medium text-gray-200">{res.option}</span>
-                                       <span className="text-sm font-medium text-gray-300">{res.count} votes</span>
+                                       <span className="text-base font-medium text-gray-700">{res.option}</span>
+                                       <span className="text-sm font-medium text-gray-600">{res.count} votes</span>
                                    </div>
-                                   <div className="w-full bg-gray-700 rounded-full h-4">
-                                       <div className="bg-red-600 h-4 rounded-full" style={{width: `${liveResults.total > 0 ? (res.count/liveResults.total)*100 : 0}%`}}></div>
+                                   <div className="w-full bg-gray-100 rounded-full h-4">
+                                       <div className="bg-teal-600 h-4 rounded-full" style={{width: `${liveResults.total > 0 ? (res.count/liveResults.total)*100 : 0}%`}}></div>
                                    </div>
                                </div>
                            ))}
@@ -1724,7 +1923,7 @@ useEffect(() => {
                                 </div>
                            )}
                            {activity.type === 'wordcloud' && (
-                               <div className="text-center p-4 bg-gray-900 rounded-lg flex flex-wrap justify-center items-center">
+                               <div className="text-center p-4 bg-white rounded-lg flex flex-wrap justify-center items-center">
                                     {liveResults.words.map((w,i) => (
                                         <span key={i} style={{fontSize: `${Math.min(48, Math.max(12, 10 + w.value*2))}px`, margin: '4px 8px', display: 'inline-block', fontWeight: '600', color: `hsl(${200 + i*25}, 80%, 70%)`}}>
                                             {w.text}
@@ -1733,9 +1932,9 @@ useEffect(() => {
                                </div>
                            )}
                            {activity.type === 'feedback' && liveResults.responses.map((res) => (
-                               <div key={res.id} className="bg-gray-700 p-3 rounded-lg flex justify-between items-center">
-                                   <p className="text-gray-200">{res.answer}</p>
-                                   <button onClick={() => handleDeleteFeedback(res.id)} className="text-red-500 hover:text-red-400 p-1 rounded-full">
+                               <div key={res.id} className="bg-gray-100 p-3 rounded-lg flex justify-between items-center">
+                                   <p className="text-gray-700">{res.answer}</p>
+                                   <button onClick={() => handleDeleteFeedback(res.id)} className="text-teal-500 hover:text-teal-400 p-1 rounded-full">
                                         <IconTrash />
                                    </button>
                                </div>
@@ -1744,7 +1943,7 @@ useEffect(() => {
                         <div className="mt-6 flex gap-3">
                             <button 
                                 onClick={() => setShowResults(false)} 
-                                className="flex-1 bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition"
+                                className="flex-1 bg-gray-100 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-600 transition"
                             >
                                 Close
                             </button>
@@ -1753,7 +1952,7 @@ useEffect(() => {
                                     const report = generateSessionReport(activity, liveResponses, sessionTopic, roomCode);
                                     generatePDF(report);
                                 }}
-                                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition font-semibold"
+                                className="flex-1 bg-blue-600 text-gray-900 px-4 py-2 rounded-lg hover:bg-blue-700 transition font-semibold"
                             >
                                 📥 Download PDF
                             </button>
@@ -1762,13 +1961,13 @@ useEffect(() => {
                 </div>
             )}
             {activity.type === "wordle" && (
-  <div className="mt-4 bg-gray-800 p-4 rounded-lg text-center border border-gray-700">
-    <h4 className="text-lg font-bold text-white mb-2">Wordle Progress</h4>
-    <div className="flex justify-around text-gray-300">
+  <div className="mt-4 bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
+    <h4 className="text-lg font-bold text-gray-900 mb-2">Wordle Progress</h4>
+    <div className="flex justify-around text-gray-600">
       <div><span className="text-green-400 font-bold text-xl">{wordleStats.won}</span><p>Correct</p></div>
       <div><span className="text-yellow-400 font-bold text-xl">{wordleStats.attempting}</span><p>Attempting</p></div>
-      <div><span className="text-red-400 font-bold text-xl">{wordleStats.lost}</span><p>Failed</p></div>
-      <div><span className="text-white font-bold text-xl">{wordleStats.total}</span><p>Total</p></div>
+      <div><span className="text-teal-400 font-bold text-xl">{wordleStats.lost}</span><p>Failed</p></div>
+      <div><span className="text-gray-900 font-bold text-xl">{wordleStats.total}</span><p>Total</p></div>
     </div>
   </div>
 )}
@@ -1776,16 +1975,16 @@ useEffect(() => {
             {/* Participants Modal */}
             {showParticipants && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
-                    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-6 w-full max-w-md text-white">
-                        <h3 className="text-2xl font-bold mb-4 text-white">Participants ({liveResponses.length})</h3>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg shadow-2xl p-6 w-full max-w-md text-gray-900">
+                        <h3 className="text-2xl font-bold mb-4 text-gray-900">Participants ({liveResponses.length})</h3>
                         <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
                            {liveResponses.length > 0 ? (
-                               <p className="text-gray-400">A list of participant names would appear here in a future version.</p>
+                               <p className="text-gray-500">A list of participant names would appear here in a future version.</p>
                            ) : (
-                               <p className="text-gray-400">No one has responded yet.</p>
+                               <p className="text-gray-500">No one has responded yet.</p>
                            )}
                         </div>
-                        <button onClick={() => setShowParticipants(false)} className="mt-6 w-full bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button>
+                        <button onClick={() => setShowParticipants(false)} className="mt-6 w-full bg-gray-100 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button>
                     </div>
                 </div>
             )}
@@ -1793,33 +1992,33 @@ useEffect(() => {
             {/* Share Link Modal */}
             {showShareLink && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
-                    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-6 w-full max-w-md text-white">
-                        <h3 className="text-2xl font-bold mb-4 text-white">Share Session</h3>
-                        <p className="text-gray-400 mb-4">Share this link with your students to let them join the session:</p>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg shadow-2xl p-6 w-full max-w-md text-gray-900">
+                        <h3 className="text-2xl font-bold mb-4 text-gray-900">Share Session</h3>
+                        <p className="text-gray-500 mb-4">Share this link with your students to let them join the session:</p>
                         
-                        <div className="bg-gray-700 p-4 rounded-lg mb-4">
-                            <p className="text-sm text-gray-400 mb-2">Shareable Link:</p>
+                        <div className="bg-gray-100 p-4 rounded-lg mb-4">
+                            <p className="text-sm text-gray-500 mb-2">Shareable Link:</p>
                             <input
                                 type="text"
                                 value={`${window.location.origin}/join/${roomCode}`}
                                 readOnly
-                                className="w-full p-2 bg-gray-600 text-white rounded border border-gray-500 text-sm"
+                                className="w-full p-2 bg-gray-600 text-gray-900 rounded border border-gray-500 text-sm"
                             />
                         </div>
 
-                        <div className="bg-gray-700 p-4 rounded-lg mb-4">
-                            <p className="text-sm text-gray-400 mb-2">Room Code:</p>
-                            <p className="text-2xl font-bold tracking-widest text-red-500 text-center">{roomCode}</p>
+                        <div className="bg-gray-100 p-4 rounded-lg mb-4">
+                            <p className="text-sm text-gray-500 mb-2">Room Code:</p>
+                            <p className="text-2xl font-bold tracking-widest text-teal-500 text-center">{roomCode}</p>
                         </div>
 
                         <button
                             onClick={handleCopyLink}
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition flex items-center justify-center mb-2"
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-gray-900 font-bold py-2 px-4 rounded-lg transition flex items-center justify-center mb-2"
                         >
                             <IconCopy /> {linkCopied ? 'Copied!' : 'Copy Link'}
                         </button>
 
-                        <button onClick={() => setShowShareLink(false)} className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button>
+                        <button onClick={() => setShowShareLink(false)} className="w-full bg-gray-100 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button>
                     </div>
                 </div>
             )}
@@ -1837,7 +2036,7 @@ useEffect(() => {
                                     playSound('click');
                                     setShowLeaderboard(false);
                                 }}
-                                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                                className="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
                             >
                                 ✕ Close
                             </button>
@@ -1852,7 +2051,7 @@ useEffect(() => {
                             <div className="bg-white rounded-lg shadow-lg overflow-hidden">
                                 <table className="w-full">
                                     <thead>
-                                        <tr className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white">
+                                        <tr className="bg-gradient-to-r from-yellow-500 to-orange-500 text-gray-900">
                                             <th className="px-6 py-4 text-left text-lg font-bold">Rank</th>
                                             <th className="px-6 py-4 text-left text-lg font-bold">Player</th>
                                             <th className="px-4 py-4 text-center text-lg font-bold">Badges</th>
@@ -1873,7 +2072,7 @@ useEffect(() => {
                                                 <td className="px-6 py-4">
                                                     <span className={`text-3xl font-bold ${
                                                         idx === 0 ? 'text-yellow-500' :
-                                                        idx === 1 ? 'text-gray-400' :
+                                                        idx === 1 ? 'text-gray-500' :
                                                         idx === 2 ? 'text-orange-600' :
                                                         'text-gray-600'
                                                     }`}>
@@ -1907,7 +2106,7 @@ useEffect(() => {
                                                                 </span>
                                                             ))
                                                         ) : (
-                                                            <span className="text-gray-400 text-sm">-</span>
+                                                            <span className="text-gray-500 text-sm">-</span>
                                                         )}
                                                     </div>
                                                 </td>
@@ -1942,32 +2141,32 @@ useEffect(() => {
             {/* Session History Modal */}
             {showHistory && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
-                    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-6 w-full max-w-2xl text-white max-h-96 overflow-y-auto">
-                        <h3 className="text-2xl font-bold mb-4 text-white">Session History</h3>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg shadow-2xl p-6 w-full max-w-2xl text-gray-900 max-h-96 overflow-y-auto">
+                        <h3 className="text-2xl font-bold mb-4 text-gray-900">Session History</h3>
                         
                         {sessionHistory.length === 0 ? (
-                            <p className="text-gray-400 text-center py-8">No sessions recorded yet.</p>
+                            <p className="text-gray-500 text-center py-8">No sessions recorded yet.</p>
                         ) : (
                             <div className="space-y-3">
                                 {sessionHistory.map((entry, idx) => (
-                                    <div key={entry.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
+                                    <div key={entry.id} className="bg-gray-100 p-4 rounded-lg border border-gray-300">
                                         <div className="flex justify-between items-start mb-2">
                                             <div>
-                                                <h4 className="font-bold text-lg text-white">{entry.topic}</h4>
-                                                <p className="text-sm text-gray-400">Room: {entry.roomCode}</p>
+                                                <h4 className="font-bold text-lg text-gray-900">{entry.topic}</h4>
+                                                <p className="text-sm text-gray-500">Room: {entry.roomCode}</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-xs text-gray-400">{entry.timestamp}</p>
-                                                <p className="text-red-400 font-semibold">{entry.activityType.toUpperCase()}</p>
+                                                <p className="text-xs text-gray-500">{entry.timestamp}</p>
+                                                <p className="text-teal-400 font-semibold">{entry.activityType.toUpperCase()}</p>
                                             </div>
                                         </div>
-                                        <div className="bg-gray-800 p-2 rounded text-sm">
-                                            <p className="text-gray-300">Participants: <span className="font-bold text-green-400">{entry.report?.totalParticipants || entry.responseCount}</span></p>
+                                        <div className="bg-gray-50 p-2 rounded text-sm">
+                                            <p className="text-gray-600">Participants: <span className="font-bold text-green-400">{entry.report?.totalParticipants || entry.responseCount}</span></p>
                                             {entry.responses && entry.responses.length > 0 && (
-                                                <div className="mt-2 text-xs text-gray-400 max-h-20 overflow-y-auto">
+                                                <div className="mt-2 text-xs text-gray-500 max-h-20 overflow-y-auto">
                                                     <p className="font-semibold mb-1">Sample responses:</p>
                                                     {entry.responses.slice(0, 3).map((res, i) => (
-                                                        <p key={i} className="text-gray-300">• {res.studentName || 'Anonymous'}: {res.answer?.substring(0, 50) || 'No answer'}</p>
+                                                        <p key={i} className="text-gray-600">• {res.studentName || 'Anonymous'}: {res.answer?.substring(0, 50) || 'No answer'}</p>
                                                     ))}
                                                     {entry.responses.length > 3 && <p className="text-gray-500 mt-1">... and {entry.responses.length - 3} more</p>}
                                                 </div>
@@ -1980,7 +2179,7 @@ useEffect(() => {
                                                     setShowReport(true);
                                                     setShowHistory(false);
                                                 }}
-                                                className="mt-2 w-full bg-blue-600 text-white text-sm px-3 py-1 rounded hover:bg-blue-700 transition"
+                                                className="mt-2 w-full bg-blue-600 text-gray-900 text-sm px-3 py-1 rounded hover:bg-blue-700 transition"
                                             >
                                                 View Full Report
                                             </button>
@@ -1990,7 +2189,7 @@ useEffect(() => {
                             </div>
                         )}
 
-                        <button onClick={() => setShowHistory(false)} className="w-full mt-4 bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button>
+                        <button onClick={() => setShowHistory(false)} className="w-full mt-4 bg-gray-100 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button>
                         
                         {sessionHistory.length > 0 && (
                             <button 
@@ -1998,7 +2197,7 @@ useEffect(() => {
                                     localStorage.setItem('sessionHistory', '[]');
                                     setSessionHistory([]);
                                 }}
-                                className="w-full mt-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
+                                className="w-full mt-2 bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition"
                             >
                                 Clear History
                             </button>
@@ -2019,7 +2218,7 @@ useEffect(() => {
                                     <p className="text-gray-600">Room Code: <span className="font-semibold text-gray-800">{sessionReport.roomCode}</span></p>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-gray-600">Activity: <span className="font-semibold text-red-600">{sessionReport.activityType.toUpperCase()}</span></p>
+                                    <p className="text-gray-600">Activity: <span className="font-semibold text-teal-600">{sessionReport.activityType.toUpperCase()}</span></p>
                                     <p className="text-gray-600">Time: <span className="font-semibold text-gray-800">{sessionReport.timestamp}</span></p>
                                 </div>
                             </div>
@@ -2073,7 +2272,7 @@ useEffect(() => {
                                                 <span className="text-sm font-bold">{count} ({((count / sessionReport.analysis.totalResponses) * 100).toFixed(1)}%)</span>
                                             </div>
                                             <div className="w-full bg-gray-300 rounded-full h-2">
-                                                <div className="bg-red-600 h-2 rounded-full" style={{width: `${(count / sessionReport.analysis.totalResponses) * 100}%`}}></div>
+                                                <div className="bg-teal-600 h-2 rounded-full" style={{width: `${(count / sessionReport.analysis.totalResponses) * 100}%`}}></div>
                                             </div>
                                         </div>
                                     ))}
@@ -2081,7 +2280,7 @@ useEffect(() => {
                                     <h4 className="font-semibold text-gray-700 mt-4 mb-2">Student Responses:</h4>
                                     <div className="max-h-48 overflow-y-auto space-y-1">
                                         {sessionReport.analysis.studentAnswers.map((sa, idx) => (
-                                            <div key={idx} className={`p-2 rounded text-sm ${sa.isCorrect ? 'bg-green-100' : 'bg-red-100'}`}>
+                                            <div key={idx} className={`p-2 rounded text-sm ${sa.isCorrect ? 'bg-green-100' : 'bg-teal-100'}`}>
                                                 <span className="font-medium">{sa.name}:</span> {sa.answer} {sa.isCorrect ? '✅' : '❌'}
                                             </div>
                                         ))}
@@ -2103,7 +2302,7 @@ useEffect(() => {
                                         {sessionReport.analysis.topWords.map((word, idx) => (
                                             <div key={idx} className="bg-white p-2 rounded border flex justify-between">
                                                 <span className="font-medium">{word.word}</span>
-                                                <span className="text-red-600 font-bold">{word.count}</span>
+                                                <span className="text-teal-600 font-bold">{word.count}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -2182,12 +2381,12 @@ useEffect(() => {
                         )}
 
                         <div className="flex gap-2">
-                            <button onClick={() => setShowReport(false)} className="flex-1 bg-gray-600 text-white px-4 py-3 rounded-lg hover:bg-gray-700 transition font-semibold">
+                            <button onClick={() => setShowReport(false)} className="flex-1 bg-gray-600 text-gray-900 px-4 py-3 rounded-lg hover:bg-gray-100 transition font-semibold">
                                 Close
                             </button>
                             <button 
                                 onClick={() => generatePDF(sessionReport)}
-                                className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition font-semibold"
+                                className="flex-1 bg-blue-600 text-gray-900 px-4 py-3 rounded-lg hover:bg-blue-700 transition font-semibold"
                             >
                                 📥 Download PDF Report
                             </button>
@@ -2212,7 +2411,7 @@ const WordleGame = ({ word, onSubmit, roomCode, studentId }) => {
     const result = guess.split("").map((ch, i) => {
       if (ch === word[i]) return { letter: ch, color: "bg-green-500" };
       else if (word.includes(ch)) return { letter: ch, color: "bg-yellow-500" };
-      else return { letter: ch, color: "bg-gray-700" };
+      else return { letter: ch, color: "bg-gray-100" };
     });
 
     const newGuesses = [...guesses, result];
@@ -2251,7 +2450,7 @@ const WordleGame = ({ word, onSubmit, roomCode, studentId }) => {
                 {guesses.map((guess, i) => (
                     <div key={i} className="flex justify-center space-x-1">
                         {guess.map((g, j) => (
-                            <div key={j} className={`w-10 h-10 flex items-center justify-center text-white text-xl font-bold ${g.color} rounded`}>
+                            <div key={j} className={`w-10 h-10 flex items-center justify-center text-gray-900 text-xl font-bold ${g.color} rounded`}>
                                 {g.letter}
                             </div>
                         ))}
@@ -2263,12 +2462,12 @@ const WordleGame = ({ word, onSubmit, roomCode, studentId }) => {
                     <input
                         type="text"
                         maxLength="5"
-                        className="p-3 border-2 border-gray-400 rounded-lg text-center text-2xl tracking-widest uppercase focus:ring-2 focus:ring-red-500 transition"
+                        className="p-3 border-2 border-gray-400 rounded-lg text-center text-2xl tracking-widest uppercase focus:ring-2 focus:ring-teal-500 transition"
                         placeholder="Enter guess"
                         value={currentGuess}
                         onChange={(e) => setCurrentGuess(e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))}
                     />
-                    <button type="submit" className="ml-4 px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">
+                    <button type="submit" className="ml-4 px-6 py-3 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-700">
                         Submit
                     </button>
                 </form>
@@ -2290,11 +2489,13 @@ const StudentView = ({ setView, initialJoinCode }) => {
     const [sessionData, setSessionData] = useState({ isSessionLive: false, currentActivity: null });
     const [codeCopied, setCodeCopied] = useState(false);
     const [timeLeft, setTimeLeft] = useState(null);
+    const [autoSubmitTriggered, setAutoSubmitTriggered] = useState(false);
 
-    // Countdown timer logic
+    // Countdown timer logic with auto-submit
     useEffect(() => {
         if (!sessionData.currentActivity || submitted) {
             setTimeLeft(null);
+            setAutoSubmitTriggered(false);
             return;
         }
 
@@ -2302,6 +2503,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
         const currentQuestion = sessionData.currentActivity.questions?.[0];
         if (currentQuestion?.timeLimit && sessionData.currentActivity.type === 'qa') {
             setTimeLeft(currentQuestion.timeLimit);
+            setAutoSubmitTriggered(false);
         } else {
             setTimeLeft(null);
             return;
@@ -2309,11 +2511,22 @@ const StudentView = ({ setView, initialJoinCode }) => {
 
         const timer = setInterval(() => {
             setTimeLeft((prev) => {
-                if (prev === null || prev <= 0) {
+                if (prev === null) {
+                    clearInterval(timer);
+                    return null;
+                }
+                if (prev <= 1) {
                     clearInterval(timer);
                     // Auto-submit when time runs out
-                    if (!submitted && feedbackText.trim()) {
-                        handleSubmit(feedbackText);
+                    if (!autoSubmitTriggered) {
+                        setAutoSubmitTriggered(true);
+                        setTimeout(() => {
+                            if (feedbackText.trim()) {
+                                handleSubmit(feedbackText);
+                            } else {
+                                handleSubmit('(No answer provided)');
+                            }
+                        }, 100);
                     }
                     return 0;
                 }
@@ -2322,7 +2535,8 @@ const StudentView = ({ setView, initialJoinCode }) => {
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [sessionData.currentActivity, submitted]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionData.currentActivity, submitted, autoSubmitTriggered]);
 
     // Auto-join if initialJoinCode is provided (but still need name first)
     useEffect(() => {
@@ -2347,11 +2561,13 @@ const StudentView = ({ setView, initialJoinCode }) => {
     }, [initialJoinCode, studentName, joined]);
 
     useEffect(() => {
-        if (sessionData.isSessionLive) {
+        // Reset submitted state when session goes live or when activity changes (including question index)
+        if (sessionData.isSessionLive && sessionData.currentActivity) {
             setSubmitted(false);
             setFeedbackText("");
         }
-    }, [sessionData.isSessionLive, sessionData.currentActivity]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionData.isSessionLive, sessionData.currentActivity?.currentQuestionIndex, sessionData.currentActivity?.type]);
 
     const handleCopyCode = async () => {
         if (enteredCode) {
@@ -2456,13 +2672,25 @@ const StudentView = ({ setView, initialJoinCode }) => {
 
         switch(currentActivity.type) {
             case 'mcq':
+                // Get the current question based on currentQuestionIndex
+                const currentIndex = currentActivity.currentQuestionIndex || 0;
+                const currentMcqQuestion = currentActivity.questions?.[currentIndex] || currentActivity;
+                const totalQuestions = currentActivity.questions?.length || 1;
                 return (
                     <div className="w-full animate-fade-in">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-4">{currentActivity.question}</h2>
-                        {currentActivity.image && <img src={currentActivity.image} alt="activity" className="rounded-lg mb-4 max-h-64 w-auto mx-auto"/>}
+                        {/* Question Number Indicator */}
+                        {totalQuestions > 1 && (
+                            <div className="mb-4 text-center">
+                                <span className="inline-block bg-teal-600 text-white px-4 py-2 rounded-full font-semibold shadow-md">
+                                    Question {currentIndex + 1} of {totalQuestions}
+                                </span>
+                            </div>
+                        )}
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">{currentMcqQuestion.question || currentActivity.question}</h2>
+                        {currentMcqQuestion.image && <img src={currentMcqQuestion.image} alt="activity" className="rounded-lg mb-4 max-h-64 w-auto mx-auto"/>}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {currentActivity.options.map((opt, i) => (
-                                <button key={i} onClick={() => handleSubmit(opt.text)} className="p-4 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition transform hover:scale-105">
+                            {(currentMcqQuestion.options || currentActivity.options || []).map((opt, i) => (
+                                <button key={i} onClick={() => handleSubmit(opt.text)} className="p-4 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition transform hover:scale-105">
                                     {opt.text}
                                 </button>
                             ))}
@@ -2476,13 +2704,13 @@ const StudentView = ({ setView, initialJoinCode }) => {
                         {currentActivity.image && <img src={currentActivity.image} alt="activity" className="rounded-lg mb-4 max-h-64 w-auto mx-auto"/>}
                         <form onSubmit={(e) => {e.preventDefault(); handleSubmit(feedbackText)}}>
                             <textarea
-                                className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 transition"
+                                className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 transition"
                                 rows="4"
                                 placeholder="Type your word(s) here..."
                                 value={feedbackText}
                                 onChange={(e) => setFeedbackText(e.target.value)}
                             ></textarea>
-                            <button type="submit" className="w-full mt-4 bg-red-600 text-white font-bold py-3 rounded-lg hover:bg-red-700 transition shadow-md">
+                            <button type="submit" className="w-full mt-4 bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700 transition shadow-md">
                                 Submit
                             </button>
                         </form>
@@ -2510,13 +2738,13 @@ const StudentView = ({ setView, initialJoinCode }) => {
                         <h2 className="text-2xl font-bold text-gray-800 mb-4">{currentActivity.question}</h2>
                         <form onSubmit={(e) => {e.preventDefault(); handleSubmit(feedbackText)}}>
                             <textarea
-                                className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 transition"
+                                className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 transition"
                                 rows="4"
                                 placeholder="Type your feedback here..."
                                 value={feedbackText}
                                 onChange={(e) => setFeedbackText(e.target.value)}
                             ></textarea>
-                            <button type="submit" className="w-full mt-4 bg-red-600 text-white font-bold py-3 rounded-lg hover:bg-red-700 transition shadow-md">
+                            <button type="submit" className="w-full mt-4 bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700 transition shadow-md">
                                 Submit
                             </button>
                         </form>
@@ -2529,7 +2757,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                             <div className="mb-6">
                                 <h2 className="text-2xl font-bold text-gray-800 mb-4">{currentQuestion?.text}</h2>
                                 {timeLeft !== null && (
-                                    <div className={`text-center mb-4 ${timeLeft <= 5 ? 'text-red-600 animate-pulse' : 'text-gray-600'}`}>
+                                    <div className={`text-center mb-4 ${timeLeft <= 5 ? 'text-teal-600 animate-pulse' : 'text-gray-600'}`}>
                                         <p className="text-lg font-bold">
                                             ⏱️ Time Remaining: {timeLeft} second{timeLeft !== 1 ? 's' : ''}
                                         </p>
@@ -2541,7 +2769,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                                 {currentQuestion?.type === 'short' && (
                                     <input
                                         type="text"
-                                        className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 transition"
+                                        className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 transition"
                                         placeholder="Type your answer..."
                                         value={feedbackText}
                                         onChange={(e) => setFeedbackText(e.target.value)}
@@ -2549,7 +2777,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                                 )}
                                 {currentQuestion?.type === 'long' && (
                                     <textarea
-                                        className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 transition"
+                                        className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 transition"
                                         rows="6"
                                         placeholder="Type your detailed answer here..."
                                         value={feedbackText}
@@ -2563,7 +2791,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                                                 key={idx}
                                                 type="button"
                                                 onClick={() => handleSubmit(opt)}
-                                                className="w-full p-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition transform hover:scale-105"
+                                                className="w-full p-3 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 transition transform hover:scale-105"
                                             >
                                                 {opt}
                                             </button>
@@ -2571,7 +2799,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                                     </div>
                                 )}
                                 {currentQuestion?.type !== 'multiple' && (
-                                    <button type="submit" className="w-full mt-4 bg-red-600 text-white font-bold py-3 rounded-lg hover:bg-red-700 transition shadow-md">
+                                    <button type="submit" className="w-full mt-4 bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700 transition shadow-md">
                                         Submit Answer
                                     </button>
                                 )}
@@ -2606,7 +2834,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                                 value={studentName}
                                 onChange={e => setStudentName(e.target.value)}
                                 placeholder="Enter your full name"
-                                className="w-full p-4 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition"
+                                className="w-full p-4 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
                             />
                             <p className="text-xs text-gray-500 mt-1">Please enter first and last name</p>
                         </div>
@@ -2619,7 +2847,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                                     value={enteredCode}
                                     onChange={e => setEnteredCode(e.target.value.trim().toUpperCase())}
                                     placeholder="AANANN"
-                                    className="flex-1 p-4 text-center text-2xl tracking-widest border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition"
+                                    className="flex-1 p-4 text-center text-2xl tracking-widest border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
                                 />
                                 <button
                                     type="button"
@@ -2633,12 +2861,12 @@ const StudentView = ({ setView, initialJoinCode }) => {
                             </div>
                         </div>
                         {codeCopied && <p className="text-green-600 text-center mt-2 text-sm font-semibold">✓ Code copied!</p>}
-                        {error && <p className="text-red-500 text-center mt-4">{error}</p>}
-                        <button type="submit" className="w-full mt-6 bg-red-600 text-white font-bold py-3 rounded-lg hover:bg-red-700 transition shadow-md">
+                        {error && <p className="text-teal-500 text-center mt-4">{error}</p>}
+                        <button type="submit" className="w-full mt-6 bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700 transition shadow-md">
                             Join
                         </button>
                     </form>
-                     <button onClick={() => setView('home')} className="mt-6 text-gray-600 hover:text-red-600 transition">
+                     <button onClick={() => setView('home')} className="mt-6 text-gray-600 hover:text-teal-600 transition">
                          Back to Home
                     </button>
                 </div>
@@ -2669,16 +2897,16 @@ const StudentView = ({ setView, initialJoinCode }) => {
 // --- Home Page ---
 const HomePage = ({ setView }) => {
     return (
-        <div className="min-h-screen bg-red-900 flex items-center justify-center">
-            <div className="text-center p-4">
-                <h1 className="text-5xl font-extrabold text-white mb-4">Interactive Classroom</h1>
-                <p className="text-lg text-red-100 mb-12">Engage, Interact, and Learn in Real-Time</p>
+        <div className="min-h-screen bg-gradient-to-br from-teal-50 via-blue-50 to-white flex items-center justify-center">
+            <div className="text-center p-8 bg-white rounded-2xl shadow-xl border border-gray-200 max-w-2xl">
+                <h1 className="text-5xl font-extrabold text-teal-700 mb-4">Interactive Classroom 🎓</h1>
+                <p className="text-lg text-gray-600 mb-12">Engage, Interact, and Learn in Real-Time</p>
                 <div className="space-y-4 sm:space-y-0 sm:space-x-6 flex flex-col sm:flex-row justify-center">
-                    <button onClick={() => setView('teacher')} className="bg-red-600 text-white font-bold py-4 px-8 rounded-lg text-lg hover:bg-red-700 transition shadow-lg transform hover:-translate-y-1">
-                        Create Session
+                    <button onClick={() => setView('teacher')} className="bg-teal-600 text-white font-bold py-4 px-8 rounded-lg text-lg hover:bg-teal-700 transition shadow-lg transform hover:-translate-y-1 hover:shadow-xl">
+                        🏫 Create Session
                     </button>
-                    <button onClick={() => setView('student')} className="bg-white text-red-600 font-bold py-4 px-8 rounded-lg text-lg hover:bg-gray-50 transition shadow-lg border-2 border-red-600 transform hover:-translate-y-1">
-                        Join Session
+                    <button onClick={() => setView('student')} className="bg-white text-teal-600 font-bold py-4 px-8 rounded-lg text-lg hover:bg-teal-50 transition shadow-lg border-2 border-teal-600 transform hover:-translate-y-1 hover:shadow-xl">
+                        👨‍🎓 Join Session
                     </button>
                 </div>
             </div>
@@ -2690,7 +2918,13 @@ const HomePage = ({ setView }) => {
 export default function App() {
     // Initialize state from localStorage if available
     const [view, setView] = useState(() => {
-        return localStorage.getItem('currentView') || 'home';
+        // Only load from localStorage if it's 'teacher' view
+        // Student view should not persist after refresh
+        const savedView = localStorage.getItem('currentView');
+        if (savedView === 'teacher') {
+            return 'teacher';
+        }
+        return 'home'; // Default to home (dashboard)
     }); 
     const [roomCode, setRoomCode] = useState(() => {
         return localStorage.getItem('teacherRoomCode') || null;
@@ -2719,6 +2953,11 @@ export default function App() {
             const code = joinMatch[1].toUpperCase();
             setInitialJoinCode(code);
             setView('student');
+        } else if (pathname === '/' || pathname === '/index.html') {
+            // If on root path, always show home (dashboard)
+            // Clear localStorage to prevent staying on old views after refresh
+            localStorage.removeItem('currentView');
+            setView('home');
         }
     }, []);
 
@@ -2758,4 +2997,12 @@ export default function App() {
             return <HomePage setView={handleSetView} />;
     }
 }
+
+
+
+
+
+
+
+
 
