@@ -32,15 +32,15 @@ public class SessionRestController {
     public Session createSession() {
         Session newSession = new Session();
         String roomCode = String.format("%c%c%d%c%d%d",
-                'A' + (int) (Math.random() * 26),
-                'A' + (int) (Math.random() * 26),
+                (char) ('A' + (int) (Math.random() * 26)),
+                (char) ('A' + (int) (Math.random() * 26)),
                 (int) (Math.random() * 10),
-                'A' + (int) (Math.random() * 26),
+                (char) ('A' + (int) (Math.random() * 26)),
                 (int) (Math.random() * 10),
                 (int) (Math.random() * 10));
 
         newSession.setRoomCode(roomCode);
-        newSession.setSessionLive(false);
+        newSession.setSessionLive(false);  // Lombok generates setSessionLive for boolean isSessionLive
         newSession.setCurrentActivity(null);
 
         if (mongoTemplate != null) {

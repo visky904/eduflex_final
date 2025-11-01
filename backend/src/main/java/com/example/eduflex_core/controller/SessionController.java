@@ -1,6 +1,5 @@
 package com.example.eduflex_core.controller;
 
-import com.example.eduflex_core.model.Session;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
