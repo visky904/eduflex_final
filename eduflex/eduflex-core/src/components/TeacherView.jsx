@@ -23,12 +23,14 @@ const TeacherView = ({ setView, roomCode }) => {
     const [isSessionLive, setIsSessionLive] = useState(false);
     const [liveResponses, setLiveResponses] = useState([]);
     const [linkCopied, setLinkCopied] = useState(false);
-    
+    const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
     const [sessionHistory, setSessionHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
     const [showReport, setShowReport] = useState(false);
     const [sessionReport, setSessionReport] = useState(null);
-    
+    const [completedActivities, setCompletedActivities] = useState([]);
+const sessionStartTimeRef = React.useRef(null);
+
     // Gamification states
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [leaderboard, setLeaderboard] = useState([]);
@@ -80,7 +82,17 @@ const TeacherView = ({ setView, roomCode }) => {
 
         return () => unsubscribe();
     }, [roomCode, activity]);
+useEffect(() => {
+    if (!roomCode) return;
+    const colRef = collection(db, "sessions", roomCode, "completedActivities");
 
+    const unsub = onSnapshot(colRef, (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setCompletedActivities(list.sort((a,b) => b.timestamp.localeCompare(a.timestamp)));
+    });
+
+    return () => unsub();
+}, [roomCode]);
     // Load session history from localStorage
     useEffect(() => {
         const savedHistory = JSON.parse(localStorage.getItem('sessionHistory') || '[]');
@@ -211,7 +223,25 @@ useEffect(() => {
         }
         
     }, [currentActivityType]);
-    
+    useEffect(() => {
+    if (!roomCode) return;
+
+    const sessionRef = doc(db, "sessions", roomCode);
+
+    const load = async () => {
+        const snap = await getDoc(sessionRef);
+        if (snap.exists()) {
+            const data = snap.data();
+
+            if (data.activityStartTime) {
+                sessionStartTimeRef.current = data.activityStartTime;
+            }
+        }
+    };
+
+    load();
+}, [roomCode]);
+
     const liveResults = useMemo(() => {
         if (!activity) return { total: 0, responses: [] };
 
@@ -251,7 +281,7 @@ useEffect(() => {
                 });
             });
             const words = Object.entries(wordMap).map(([text, value]) => ({ text, value }));
-            return { total: words.length, words };
+return { total: liveResponses.length, words };
         }
         
         if (activity.type === 'feedback') {
@@ -310,6 +340,7 @@ useEffect(() => {
                 return;
             }
         }
+    sessionStartTimeRef.current = Date.now();  // <-- store local start time
 
         const responsesCol = collection(db, 'sessions', roomCode, 'responses');
         const q = query(responsesCol);
@@ -330,43 +361,71 @@ useEffect(() => {
         await updateDoc(sessionRef, {
             isSessionLive: true,
             currentActivity: activityToSend,
+             activityStartTime: Date.now(),
         });
         setIsSessionLive(true);
     };
 
-    const handleStopSession = async () => {
-        const sessionRef = doc(db, 'sessions', roomCode);
-        await updateDoc(sessionRef, {
-            isSessionLive: false,
-            currentActivity: null,
-        });
-        
-        // Generate comprehensive session report
-        const report = generateSessionReport(activity, liveResponses, sessionTopic, roomCode);
-        setSessionReport(report);
-        
-        // Save session history
-        const historyEntry = {
-            id: Date.now(),
-            roomCode: roomCode,
-            topic: sessionTopic || 'Untitled Session',
-            activityType: activity.type,
-            timestamp: new Date().toLocaleString(),
-            responseCount: liveResponses.length,
-            activityDetails: activity,
-            responses: liveResponses,
-            report: report
-        };
-        
-        // Save to localStorage and update state
-        const savedHistory = JSON.parse(localStorage.getItem('sessionHistory') || '[]');
-        const newHistory = [...savedHistory, historyEntry];
-        localStorage.setItem('sessionHistory', JSON.stringify(newHistory));
-        setSessionHistory(newHistory); // Update state with new history
-        
-        setIsSessionLive(false);
-        setShowReport(true); // Show report modal
+   const handleStopSession = async () => {
+    if (!roomCode) return;
+
+    // 1️⃣ Reference to main session document
+    const mainSessionRef = doc(db, "sessions", roomCode);
+
+    // 2️⃣ End the session (update main session doc)
+    await updateDoc(mainSessionRef, {
+        isSessionLive: false,
+        currentActivity: null,
+    });
+
+    // 3️⃣ Generate session report
+    const report = generateSessionReport(
+        activity,
+        liveResponses,
+        sessionTopic,
+        roomCode
+    );
+    setSessionReport(report);
+
+    // 4️⃣ Create new completed activity entry
+    const activityRef = doc(
+        db,
+        "sessions",
+        roomCode,
+        "completedActivities",
+        String(Date.now())
+    );
+
+    await setDoc(activityRef, {
+        timestamp: new Date().toISOString(),
+        activityType: activity.type,
+        activityDetails: activity,
+        responses: liveResponses,
+        report,
+    });
+
+    // 5️⃣ Save to local history
+    const historyEntry = {
+        id: Date.now(),
+        roomCode,
+        topic: sessionTopic || "Untitled Session",
+        activityType: activity.type,
+        timestamp: new Date().toLocaleString(),
+        responseCount: liveResponses.length,
+        activityDetails: activity,
+        responses: liveResponses,
+        report,
     };
+
+    const savedHistory = JSON.parse(localStorage.getItem("sessionHistory") || "[]");
+    const newHistory = [...savedHistory, historyEntry];
+    localStorage.setItem("sessionHistory", JSON.stringify(newHistory));
+    setSessionHistory(newHistory);
+
+    // 6️⃣ Update UI state
+    setIsSessionLive(false);
+};
+
 
     const handleNextQuestion = async () => {
         if (!activity.questions || activity.questions.length === 0) return;
@@ -413,128 +472,138 @@ useEffect(() => {
     };
 
     // Gamification: Calculate points and badges for a response
-    const calculatePoints = (response, activityStartTime, isFirstResponse = false) => {
-        if (!enableGamification) return { points: 0, badges: [] };
-        
-        let points = 10; // Base points for participation
-        const badges = [];
-        
-        // First response badge
-        if (isFirstResponse) {
-            badges.push('🎯');
-        }
-        
-        // Bonus points for correct answers (MCQ only)
-        if (activity.type === 'mcq' && response.answer) {
-            const correctOption = activity.options.find(opt => opt.isCorrect);
-            if (correctOption && response.answer === correctOption.text) {
-                points += 20; // Correct answer bonus
-                badges.push('✅');
-                
-                // Speed bonus (answered within first 5 seconds)
-                if (response.timestamp && activityStartTime) {
-                    const responseTime = response.timestamp.toMillis();
-                    const timeTaken = (responseTime - activityStartTime) / 1000;
-                    if (timeTaken <= 3) {
-                        points += 15; // Speed demon!
-                        badges.push('⚡');
-                    } else if (timeTaken <= 5) {
-                        points += 10;
-                    } else if (timeTaken <= 10) {
-                        points += 5; // Quick responder
-                    }
+   const calculatePoints = (response, activityStartTime, isFirstResponse = false) => {
+    if (!enableGamification) return { points: 0, badges: [] };
+    
+    let points = 10; // Base participation points
+    const badges = [];
+
+    // 🎯 First response badge
+    if (isFirstResponse) {
+        badges.push("🎯");
+    }
+
+    // ✅ MCQ scoring
+    if (activity.type === "mcq" && response.answer) {
+        const currentQ =
+            activity.questions?.[activity.currentQuestionIndex] || activity;
+
+        const correctOption = currentQ.options?.find((opt) => opt.isCorrect);
+
+        const isCorrect = correctOption && response.answer === correctOption.text;
+
+        if (isCorrect) {
+            points += 20;
+            badges.push("✅");
+
+            // ⚡ Speed bonus
+            if (response.timestamp && activityStartTime) {
+                const responseTime = response.timestamp.toMillis();
+                const timeTaken = (responseTime - activityStartTime) / 1000;
+
+                if (timeTaken <= 3) {
+                    points += 15;
+                    badges.push("⚡");
+                } else if (timeTaken <= 5) {
+                    points += 10;
+                } else if (timeTaken <= 10) {
+                    points += 5;
                 }
             }
         }
-        
-        // Bonus points for Q&A (based on response length and quality)
-        if (activity.type === 'qa' && response.answer) {
-            const wordCount = response.answer.split(' ').length;
-            if (wordCount > 50) {
-                points += 15; // Very detailed answer
-                badges.push('📝');
-            } else if (wordCount > 20) {
-                points += 10; // Detailed answer
-            } else if (wordCount > 10) {
-                points += 5; // Good answer
-            }
+    }
+
+    // 📝 Q&A scoring
+    if (activity.type === "qa" && response.answer) {
+        const wordCount = response.answer.split(" ").length;
+
+        if (wordCount > 50) {
+            points += 15;
+            badges.push("📝");
+        } else if (wordCount > 20) {
+            points += 10;
+        } else if (wordCount > 10) {
+            points += 5;
         }
-        
-        return { points, badges };
-    };
+    }
+    
+
+    return { points, badges };
+};
 
     // Update leaderboard from responses
-    useEffect(() => {
-        if (!enableGamification || !isSessionLive || liveResponses.length === 0) {
-            setLeaderboard([]);
-            return;
-        }
+        useEffect(() => {
+            if (!enableGamification || !isSessionLive || liveResponses.length === 0) {
+                setLeaderboard([]);
+                return;
+            }
 
-        const activityStartTime = Date.now() - 30000; // Approximate start time
-        const playerData = new Map();
-        let firstResponseStudentName = null;
+        const activityStartTime = sessionStartTimeRef.current || Date.now();
+            const playerData = new Map();
+            let firstResponseStudentName = null;
 
-        // Find the first responder
-        if (liveResponses.length > 0) {
-            const sortedByTime = [...liveResponses].sort((a, b) => {
-                if (!a.timestamp || !b.timestamp) return 0;
-                return a.timestamp.toMillis() - b.timestamp.toMillis();
-            });
-            firstResponseStudentName = sortedByTime[0]?.studentName;
-        }
+            // Find the first responder
+            if (liveResponses.length > 0) {
+                const sortedByTime = [...liveResponses].sort((a, b) => {
+                    if (!a.timestamp || !b.timestamp) return 0;
+                    return a.timestamp.toMillis() - b.timestamp.toMillis();
+                });
+                firstResponseStudentName = sortedByTime[0]?.studentName;
+            }
 
-        liveResponses.forEach((response, idx) => {
-            const playerName = response.studentName || 'Anonymous';
+            liveResponses.forEach((response) => {
+            const playerName = response.studentName || "Anonymous";
             const isFirstResponse = playerName === firstResponseStudentName;
-            const { points, badges } = calculatePoints(response, activityStartTime, isFirstResponse);
-            
+
+            const { points, badges } = calculatePoints(
+                response,
+                activityStartTime,
+                isFirstResponse
+            );
+
             if (playerData.has(playerName)) {
                 const existing = playerData.get(playerName);
                 playerData.set(playerName, {
                     points: existing.points + points,
-                    badges: [...new Set([...existing.badges, ...badges])] // Unique badges
+                    badges: [...new Set([...existing.badges, ...badges])],
                 });
             } else {
                 playerData.set(playerName, { points, badges });
             }
         });
 
-        // Check for perfect score badge (all correct)
-        playerData.forEach((data, playerName) => {
-            const playerResponses = liveResponses.filter(r => r.studentName === playerName);
-            if (activity.type === 'mcq') {
-                const correctOption = activity.options.find(opt => opt.isCorrect);
-                const allCorrect = playerResponses.every(r => r.answer === correctOption?.text);
-                if (allCorrect && playerResponses.length > 0) {
-                    data.badges.push('💯');
-                }
-            }
-        });
+            // Check for perfect score badge (all correct)
+    if (activity.type === "mcq") {
+            const currentQ =
+                activity.questions?.[activity.currentQuestionIndex] || activity;
 
-        // Check for participation king (most responses)
-        if (playerData.size > 0) {
-            const responseCounts = new Map();
-            liveResponses.forEach(r => {
-                const name = r.studentName || 'Anonymous';
-                responseCounts.set(name, (responseCounts.get(name) || 0) + 1);
-            });
-            const maxResponses = Math.max(...responseCounts.values());
-            responseCounts.forEach((count, name) => {
-                if (count === maxResponses && count > 3) {
-                    const data = playerData.get(name);
-                    if (data) data.badges.push('👑');
+            const correctOption = currentQ.options?.find((opt) => opt.isCorrect);
+
+            playerData.forEach((data, playerName) => {
+                const playerResponses = liveResponses.filter(
+                    (r) => r.studentName === playerName
+                );
+
+                const allCorrect =
+                    playerResponses.length > 0 &&
+                    playerResponses.every(
+                        (r) => r.answer === correctOption?.text
+                    );
+
+                if (allCorrect) {
+                    data.badges.push("💯");
                 }
             });
         }
 
-        const leaderboardData = Array.from(playerData.entries())
-            .map(([name, data]) => ({ name, points: data.points, badges: data.badges }))
-            .sort((a, b) => b.points - a.points)
-            .slice(0, 10); // Top 10 players
+            const leaderboardData = Array.from(playerData.entries())
+                .map(([name, data]) => ({ name, points: data.points, badges: data.badges }))
+                .sort((a, b) => b.points - a.points)
+                .slice(0, 10); // Top 10 players
 
-        setLeaderboard(leaderboardData);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [liveResponses, enableGamification, isSessionLive, activity]);
+            setLeaderboard(leaderboardData);
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [liveResponses, enableGamification, isSessionLive, activity]);
 
     const sidebarItems = [
         { id: 'mcq', name: 'MCQ / Poll', icon: <IconListCheck /> },
@@ -543,6 +612,8 @@ useEffect(() => {
         { id: 'feedback', name: 'Short Feedback', icon: <IconMessageSquare /> },
         { id: 'qa', name: 'Q&A Session', icon: <IconHelpCircle /> },
         { id: 'wordle', name: 'Wordle Game', icon: <IconListCheck /> },
+        { id: 'analytics', name: 'Analytics / Reports', icon: <IconListCheck /> },
+
     ];
 
     return (
@@ -557,7 +628,16 @@ useEffect(() => {
                 </div>
                 <nav className="flex-1 px-2 py-4 space-y-2">
                     {sidebarItems.map(item => (
-                        <button key={item.id} onClick={() => setCurrentActivityType(item.id)}
+                       <button
+                            key={item.id}
+                            onClick={() => {
+                                if (item.id === 'analytics') {
+                                    setShowAnalyticsModal(true);
+                                    return;
+                                }
+                                setCurrentActivityType(item.id);
+                            }}
+
                             className={`w-full flex items-center p-3 rounded-lg transition-colors text-left ${isSidebarOpen ? '' : 'justify-center'} ${currentActivityType === item.id ? 'bg-teal-600 text-white shadow-md' : 'hover:bg-teal-50 hover:text-teal-700'}`}
                         >
                             {item.icon}
@@ -1211,6 +1291,56 @@ useEffect(() => {
                     </div>
                 </div>
             )}
+            {showAnalyticsModal && (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+        <div className="bg-white border border-gray-300 rounded-lg shadow-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold mb-4 text-teal-700">📊 Session Analytics</h2>
+
+            {completedActivities.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">
+                    No activities have been completed yet.
+                </p>
+            ) : (
+                <div className="space-y-4">
+                    {completedActivities.map((act) => (
+                        <div key={act.id} className="p-4 bg-gray-50 rounded-lg border">
+                            <div className="flex justify-between">
+                                <div>
+                                    <p className="text-lg font-bold">{act.activityType.toUpperCase()}</p>
+                                    <p className="text-sm text-gray-500">{new Date(act.timestamp).toLocaleString()}</p>
+                                </div>
+                                <button
+                                    onClick={() => generatePDF(act.report)}
+                                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                                >
+                                    📥 Download PDF
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    setSessionReport(act.report);
+                                    setShowReport(true);
+                                }}
+                                className="mt-3 w-full bg-gray-100 text-gray-900 py-2 rounded hover:bg-gray-200"
+                            >
+                                View Detailed Analytics
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <button
+                onClick={() => setShowAnalyticsModal(false)}
+                className="mt-6 w-full bg-gray-200 text-gray-900 py-2 rounded hover:bg-gray-300"
+            >
+                Close
+            </button>
+        </div>
+    </div>
+)}
+
         </div>
     );
 };

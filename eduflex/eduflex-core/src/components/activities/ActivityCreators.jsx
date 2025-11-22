@@ -309,13 +309,50 @@ export const WordCloudCreator = ({ activity, setActivity, liveResults }) => {
             {liveResults && liveResults.words && liveResults.words.length > 0 && (
                 <div className="mt-8 p-6 bg-white bg-opacity-75 rounded-lg border border-gray-200">
                    <h4 className="text-lg font-semibold text-gray-900 mb-4">Live Word Cloud</h4>
-                   <div className="text-center p-4 min-h-[10rem] flex items-center justify-center flex-wrap">
-                       {liveResults.words.map((w,i) => (
-                           <span key={i} style={{fontSize: `${Math.min(48, Math.max(12, 10 + w.value*2))}px`, margin: '4px 8px', display: 'inline-block', fontWeight: '600', color: `hsl(${200 + i*25}, 80%, 70%)`}}>
-                               {w.text}
-                           </span>
-                       ))}
-                   </div>
+                   <div className="relative w-full min-h-[14rem] bg-white rounded-lg border overflow-hidden">
+            {liveResults && liveResults.words && liveResults.words.length > 0 && (
+            <div className="mt-8 p-6 bg-white bg-opacity-75 rounded-lg border border-gray-200">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Live Word Cloud</h4>
+
+                <div className="relative w-full min-h-[18rem] bg-white rounded-lg border overflow-hidden">
+            {liveResults.words.map((w, i) => {
+                // much stronger curve
+                const rawSize = 12 + Math.pow(w.value, 2.2) * 10;
+
+                // cap max-size for safety
+                const size = Math.min(rawSize, 80); // can adjust later
+
+                const top = 10 + Math.random() * 60;
+                const left = 10 + Math.random() * 70;
+
+                const rotate = Math.random() * 40 - 20;
+                const color = `hsl(${(i * 47) % 360}, 65%, 45%)`;
+
+                return (
+                <span
+                    key={i}
+                    className="absolute whitespace-nowrap font-semibold select-none"
+                    style={{
+                    top: `${top}%`,
+                    left: `${left}%`,
+                    fontSize: `${size}px`,
+                    transform: `translate(-50%, -50%) rotate(${rotate}deg)`,
+                    color,
+                    opacity: 0.92,
+                    pointerEvents: "none",
+                    }}
+                >
+                    {w.text}
+                </span>
+                );
+            })}
+
+                </div>
+            </div>
+            )}
+
+            </div>
+
                 </div>
             )}
         </div>
