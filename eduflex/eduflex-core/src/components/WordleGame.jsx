@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
 
-export const WordleGame = ({ word, onSubmit, roomCode, studentId }) => {
+export const WordleGame = ({ word, onGameEnd, roomCode, studentId }) => {
   const [guesses, setGuesses] = useState([]);
   const [currentGuess, setCurrentGuess] = useState("");
   const [gameOver, setGameOver] = useState(false);
@@ -28,6 +28,12 @@ export const WordleGame = ({ word, onSubmit, roomCode, studentId }) => {
       setGameOver(true);
       setMessage("🎉 Correct! You guessed the word!");
       status = "won";
+      
+      // ✅ TRIGGER PARENT FUNCTION ON WIN
+      if (onGameEnd) {
+          onGameEnd(guess);
+      }
+
     } else if (newGuesses.length >= 6) {
       setGameOver(true);
       setMessage(`❌ Out of attempts! The word was ${word}`);

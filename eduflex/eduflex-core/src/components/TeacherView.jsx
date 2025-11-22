@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, onSnapshot, query, updateDoc, doc, deleteDoc, getDocs, getDoc, setDoc } from 'firebase/firestore';
+// ✅ FIX 1: Added arrayUnion to the imports here
+import { collection, onSnapshot, query, updateDoc, doc, deleteDoc, getDocs, getDoc, setDoc, increment, arrayUnion } from 'firebase/firestore';
 import { playSound, generateRoomCode } from '../utils/helpers';
 import { generatePDF } from '../utils/pdfGenerator';
 import { generateSessionReport } from '../utils/sessionUtils';
@@ -10,12 +11,8 @@ import { IconUsers, IconSettings, IconPlus, IconChevronLeft, IconListCheck, Icon
 const TeacherView = ({ setView, roomCode }) => {
     const [sessionTopic, setSessionTopic] = useState('');
     const [currentActivityType, setCurrentActivityType] = useState('mcq');
-    const [wordleStats, setWordleStats] = useState({
-  total: 0,
-  attempting: 0,
-  won: 0,
-  lost: 0,
-});
+    const [wordleStats, setWordleStats] = useState({ total: 0, attempting: 0, won: 0, lost: 0 });
+    
     const [showParticipants, setShowParticipants] = useState(false);
     const [showResults, setShowResults] = useState(false);
     const [showShareLink, setShowShareLink] = useState(false);
@@ -23,7 +20,13 @@ const TeacherView = ({ setView, roomCode }) => {
     const [isSessionLive, setIsSessionLive] = useState(false);
     const [liveResponses, setLiveResponses] = useState([]);
     const [linkCopied, setLinkCopied] = useState(false);
+<<<<<<< HEAD
     const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+=======
+    
+    const [allParticipants, setAllParticipants] = useState([]);
+    
+>>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
     const [sessionHistory, setSessionHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
     const [showReport, setShowReport] = useState(false);
@@ -41,14 +44,70 @@ const sessionStartTimeRef = React.useRef(null);
         question: '',
         image: null,
         options: [{ text: '', isCorrect: false }, { text: '', isCorrect: false }],
-        settings: {
-            markCorrect: true,
-            allowMultiple: false,
-            profanityFilter: true,
-            reviewStyle: 'emoji',
-        }
+        settings: { markCorrect: true, allowMultiple: false, profanityFilter: true, reviewStyle: 'emoji' }
     });
 
+    // --- Listener for Permanent Participants List ---
+    useEffect(() => {
+        if (!roomCode) return;
+
+        // Listen to the 'participants' sub-collection
+        const participantsCol = collection(db, 'sessions', roomCode, 'participants');
+        const unsubscribe = onSnapshot(participantsCol, (snapshot) => {
+            const participants = [];
+            snapshot.forEach((doc) => {
+                participants.push(doc.data());
+            });
+            setAllParticipants(participants);
+        });
+
+        return () => unsubscribe();
+    }, [roomCode]);
+
+    // --- Global Point Processing Engine ---
+    useEffect(() => {
+        if (!isSessionLive || !enableGamification || liveResponses.length === 0) return;
+
+        const processScores = async () => {
+            const updates = [];
+            
+            // 1. Identify responses that haven't been scored yet
+            const unscoredResponses = liveResponses.filter(r => !r.pointsAwarded);
+            
+            if (unscoredResponses.length === 0) return;
+
+            const activityStartTime = Date.now() - 10000; // Fallback
+
+            for (const response of unscoredResponses) {
+                const isFirst = liveResponses.length === 1; 
+                const { points, badges } = calculatePoints(response, activityStartTime, isFirst, enableGamification, activity);
+
+                if (points > 0) {
+                    // 2. Update the Student's PERMANENT record in 'participants'
+                    const participantRef = doc(db, 'sessions', roomCode, 'participants', response.studentName);
+                    
+                    // ✅ FIX 2: Used the imported arrayUnion directly (removed require)
+                    updates.push(
+                        updateDoc(participantRef, {
+                            score: increment(points),
+                            badges: arrayUnion(...badges),
+                            lastActive: new Date()
+                        }).catch(err => console.log("Participant not found, skipping score"))
+                    );
+
+                    // 3. Mark response as awarded so we don't count it again
+                    const responseRef = doc(db, 'sessions', roomCode, 'responses', response.id);
+                    updates.push(updateDoc(responseRef, { pointsAwarded: true }));
+                }
+            }
+            
+            if(updates.length > 0) await Promise.all(updates);
+        };
+
+        processScores();
+    }, [liveResponses, isSessionLive, enableGamification, activity, roomCode]);
+
+    // Listen for Live Responses
     useEffect(() => {
         if (!roomCode || !activity) return;
 
@@ -60,12 +119,10 @@ const sessionStartTimeRef = React.useRef(null);
             
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
-                // Only include responses that match the current activity type
                 if (data.type === activity.type) {
                     const studentKey = data.studentName || doc.id;
                     const existingResponse = responsesMap.get(studentKey);
                     
-                    // Keep only the latest response per student (by timestamp)
                     if (!existingResponse || 
                         (data.timestamp && existingResponse.timestamp && 
                          data.timestamp.toMillis() > existingResponse.timestamp.toMillis())) {
@@ -74,12 +131,10 @@ const sessionStartTimeRef = React.useRef(null);
                 }
             });
             
-            // Convert Map to array
             const responses = Array.from(responsesMap.values());
             setLiveResponses(responses);
         });
         
-
         return () => unsubscribe();
     }, [roomCode, activity]);
 useEffect(() => {
@@ -109,18 +164,12 @@ useEffect(() => {
                 const docSnap = await getDoc(sessionRef);
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    
-                    // Restore session state from Firebase
-                    if (data.sessionTopic) {
-                        setSessionTopic(data.sessionTopic);
-                    }
+                    if (data.sessionTopic) setSessionTopic(data.sessionTopic);
                     if (data.currentActivity) {
                         setActivity(data.currentActivity);
                         setCurrentActivityType(data.currentActivity.type);
                     }
-                    if (data.isSessionLive !== undefined) {
-                        setIsSessionLive(data.isSessionLive);
-                    }
+                    if (data.isSessionLive !== undefined) setIsSessionLive(data.isSessionLive);
                 }
             } catch (error) {
                 console.error("Error loading session state:", error);
@@ -147,38 +196,36 @@ useEffect(() => {
             }
         };
         
-        // Debounce to avoid too many writes
         const timer = setTimeout(() => {
-            if (sessionTopic || activity.question) {
-                saveSession();
-            }
+            if (sessionTopic || activity.question) saveSession();
         }, 1000);
         
         return () => clearTimeout(timer);
     }, [roomCode, sessionTopic, activity]);
 
-useEffect(() => {
-  if (!roomCode || activity.type !== "wordle") return;
+    useEffect(() => {
+      if (!roomCode || activity.type !== "wordle") return;
 
-  const progressCol = collection(db, "sessions", roomCode, "wordleProgress");
-  const q = query(progressCol);
+      const progressCol = collection(db, "sessions", roomCode, "wordleProgress");
+      const q = query(progressCol);
 
-  const unsubscribe = onSnapshot(q, (querySnapshot) => {
-    let total = 0, won = 0, lost = 0, attempting = 0;
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        let total = 0, won = 0, lost = 0, attempting = 0;
 
-    querySnapshot.forEach((doc) => {
-      total++;
-      const data = doc.data();
-      if (data.status === "won") won++;
-      else if (data.status === "lost") lost++;
-      else attempting++;
-    });
+        querySnapshot.forEach((doc) => {
+          total++;
+          const data = doc.data();
+          if (data.status === "won") won++;
+          else if (data.status === "lost") lost++;
+          else attempting++;
+        });
 
-    setWordleStats({ total, won, lost, attempting });
-  });
+        setWordleStats({ total, won, lost, attempting });
+      });
 
-  return () => unsubscribe();
-}, [roomCode, activity.type]);
+      return () => unsubscribe();
+    }, [roomCode, activity.type]);
+
     useEffect(() => {
         const baseSettings = {
             markCorrect: false, allowMultiple: false, profanityFilter: true, reviewStyle: 'emoji',
@@ -318,23 +365,20 @@ return { total: liveResponses.length, words };
     };
 
     const handleStartSession = async () => {
-        // Validation based on activity type
+        // Validation
         if (activity.type === 'qa') {
-            // For Q&A, check if there are questions with text
             if (!activity.questions || activity.questions.length === 0 || 
                 !activity.questions.some(q => q.text && q.text.trim() !== '')) {
                 alert('Please enter at least one question for the Q&A session.');
                 return;
             }
         } else if (activity.type === 'mcq') {
-            // For MCQ, check if there are questions with text and options
             if (!activity.questions || activity.questions.length === 0 || 
                 !activity.questions.some(q => q.question && q.question.trim() !== '')) {
                 alert('Please enter at least one question for the MCQ session.');
                 return;
             }
         } else {
-            // For other activities, check activity.question
             if (!activity.question || activity.question.trim() === '') {
                 alert('Please enter a question or prompt for the activity.');
                 return;
@@ -351,7 +395,6 @@ return { total: liveResponses.length, words };
         });
         await Promise.all(deletePromises);
 
-        // For MCQ and Q&A with multiple questions, start with question index 0
         const activityToSend = { ...activity };
         if ((activity.type === 'mcq' || activity.type === 'qa') && activity.questions) {
             activityToSend.currentQuestionIndex = 0;
@@ -366,6 +409,7 @@ return { total: liveResponses.length, words };
         setIsSessionLive(true);
     };
 
+<<<<<<< HEAD
    const handleStopSession = async () => {
     if (!roomCode) return;
 
@@ -415,6 +459,37 @@ return { total: liveResponses.length, words };
         activityDetails: activity,
         responses: liveResponses,
         report,
+=======
+    const handleStopSession = async () => {
+        const sessionRef = doc(db, 'sessions', roomCode);
+        await updateDoc(sessionRef, {
+            isSessionLive: false,
+            currentActivity: null,
+        });
+        
+        const report = generateSessionReport(activity, liveResponses, sessionTopic, roomCode);
+        setSessionReport(report);
+        
+        const historyEntry = {
+            id: Date.now(),
+            roomCode: roomCode,
+            topic: sessionTopic || 'Untitled Session',
+            activityType: activity.type,
+            timestamp: new Date().toLocaleString(),
+            responseCount: liveResponses.length,
+            activityDetails: activity,
+            responses: liveResponses,
+            report: report
+        };
+        
+        const savedHistory = JSON.parse(localStorage.getItem('sessionHistory') || '[]');
+        const newHistory = [...savedHistory, historyEntry];
+        localStorage.setItem('sessionHistory', JSON.stringify(newHistory));
+        setSessionHistory(newHistory);
+        
+        setIsSessionLive(false);
+        setShowReport(true);
+>>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
     };
 
     const savedHistory = JSON.parse(localStorage.getItem("sessionHistory") || "[]");
@@ -438,7 +513,6 @@ return { total: liveResponses.length, words };
             return;
         }
         
-        // Clear responses for next question
         const responsesCol = collection(db, 'sessions', roomCode, 'responses');
         const q = query(responsesCol);
         const querySnapshot = await getDocs(q);
@@ -448,7 +522,6 @@ return { total: liveResponses.length, words };
         });
         await Promise.all(deletePromises);
         
-        // Update activity with next question index
         const updatedActivity = { ...activity, currentQuestionIndex: nextIndex };
         setActivity(updatedActivity);
         
@@ -471,6 +544,7 @@ return { total: liveResponses.length, words };
         }
     };
 
+<<<<<<< HEAD
     // Gamification: Calculate points and badges for a response
    const calculatePoints = (response, activityStartTime, isFirstResponse = false) => {
     if (!enableGamification) return { points: 0, badges: [] };
@@ -524,6 +598,52 @@ return { total: liveResponses.length, words };
             points += 10;
         } else if (wordCount > 10) {
             points += 5;
+=======
+    const calculatePoints = (response, activityStartTime, isFirstResponse = false) => {
+        if (!enableGamification) return { points: 0, badges: [] };
+        
+        let points = 10; 
+        const badges = [];
+        
+        if (isFirstResponse) badges.push('🎯');
+        
+        if (activity.type === 'mcq' && response.answer) {
+            const correctOption = activity.options.find(opt => opt.isCorrect);
+            if (correctOption && response.answer === correctOption.text) {
+                points += 20; 
+                badges.push('✅');
+                
+                if (response.timestamp && activityStartTime) {
+                    const responseTime = response.timestamp.toMillis();
+                    const timeTaken = (responseTime - activityStartTime) / 1000;
+                    if (timeTaken <= 3) {
+                        points += 15; badges.push('⚡');
+                    } else if (timeTaken <= 5) {
+                        points += 10;
+                    } else if (timeTaken <= 10) {
+                        points += 5;
+                    }
+                }
+            }
+        }
+        
+        if (activity.type === 'qa' && response.answer) {
+            const wordCount = response.answer.split(' ').length;
+            if (wordCount > 50) {
+                points += 15; badges.push('📝');
+            } else if (wordCount > 20) {
+                points += 10;
+            } else if (wordCount > 10) {
+                points += 5;
+            }
+        }
+        if (activity.type === 'wordle' && response.answer) {
+            // If they submitted a response in Wordle mode, it means they won (via onGameEnd)
+            if (response.answer.toUpperCase() === (activity.wordleAnswer || '').toUpperCase()) {
+                points += 50; // Big reward for solving the puzzle!
+                badges.push('🧠'); // "Mastermind" badge
+            }
+>>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
         }
     }
     
@@ -531,6 +651,7 @@ return { total: liveResponses.length, words };
     return { points, badges };
 };
 
+<<<<<<< HEAD
     // Update leaderboard from responses
         useEffect(() => {
             if (!enableGamification || !isSessionLive || liveResponses.length === 0) {
@@ -604,6 +725,22 @@ return { total: liveResponses.length, words };
             setLeaderboard(leaderboardData);
             // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [liveResponses, enableGamification, isSessionLive, activity]);
+=======
+    // Update leaderboard (Using the PERMANENT Participants List now)
+    useEffect(() => {
+        if (!enableGamification || !isSessionLive) return;
+        
+        // The new logic uses 'allParticipants' for the leaderboard table,
+        // but for real-time 'badges' calculation based on current responses, 
+        // we keep the logic here or just rely on the DB.
+        // We will let the DB be the source of truth.
+        
+        // Note: We are not setting local 'leaderboard' state here anymore because
+        // we render 'allParticipants' directly in the JSX.
+    }, [liveResponses, enableGamification, isSessionLive, activity]);
+    // Note: You can remove this effect if you only use 'allParticipants' for the leaderboard UI.
+    // I kept it empty to show where the old logic was.
+>>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
 
     const sidebarItems = [
         { id: 'mcq', name: 'MCQ / Poll', icon: <IconListCheck /> },
@@ -617,17 +754,19 @@ return { total: liveResponses.length, words };
     ];
 
     return (
-        <div className="flex h-screen bg-gradient-to-br from-teal-50 via-blue-50 to-white font-sans">
-            {/* Sidebar */}
-            <aside className={`bg-white text-gray-600 flex flex-col transition-all duration-300 ease-in-out shadow-lg border-r border-gray-200 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
-                <div className={`flex items-center justify-between p-4 border-b border-gray-200 ${isSidebarOpen ? 'h-16' : ''}`}>
-                    {isSidebarOpen && <h1 className="text-xl font-bold text-teal-700 whitespace-nowrap">Activities</h1>}
-                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 rounded-lg hover:bg-teal-50 transition-colors text-teal-600">
+        <div className="flex h-screen bg-gray-900 font-sans text-gray-100">
+            
+            {/* Sidebar - Now Dark Gray/Black */}
+            <aside className={`bg-black/40 backdrop-blur-md border-r border-gray-800 text-gray-300 flex flex-col transition-all duration-300 ease-in-out shadow-2xl ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
+                <div className={`flex items-center justify-between p-4 border-b border-gray-800 ${isSidebarOpen ? 'h-16' : ''}`}>
+                    {isSidebarOpen && <h1 className="text-xl font-bold text-red-500 whitespace-nowrap tracking-wider">EDU<span className="text-white">FLEX</span></h1>}
+                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 rounded-lg hover:bg-gray-800 transition-colors text-red-500">
                         {isSidebarOpen ? <IconChevronLeft /> : <div className="text-2xl font-bold">»</div>}
                     </button>
                 </div>
                 <nav className="flex-1 px-2 py-4 space-y-2">
                     {sidebarItems.map(item => (
+<<<<<<< HEAD
                        <button
                             key={item.id}
                             onClick={() => {
@@ -639,42 +778,45 @@ return { total: liveResponses.length, words };
                             }}
 
                             className={`w-full flex items-center p-3 rounded-lg transition-colors text-left ${isSidebarOpen ? '' : 'justify-center'} ${currentActivityType === item.id ? 'bg-teal-600 text-white shadow-md' : 'hover:bg-teal-50 hover:text-teal-700'}`}
+=======
+                        <button key={item.id} onClick={() => setCurrentActivityType(item.id)}
+                            className={`w-full flex items-center p-3 rounded-lg transition-colors text-left ${isSidebarOpen ? '' : 'justify-center'} ${currentActivityType === item.id ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]' : 'hover:bg-gray-800 hover:text-white'}`}
+>>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
                         >
                             {item.icon}
-                            {isSidebarOpen && <span className="whitespace-nowrap">{item.name}</span>}
+                            {isSidebarOpen && <span className="whitespace-nowrap ml-2">{item.name}</span>}
                         </button>
                     ))}
                 </nav>
             </aside>
 
-            {/* Main Content */}
-            <main className="flex-1 flex flex-col overflow-y-auto bg-white">
-                 <header className="bg-white shadow-md p-4 border-b border-gray-200 sticky top-0 z-10">
-                    {/* Session Topic - First Row */}
+            {/* Main Content - Dark Gradient */}
+            <main className="flex-1 flex flex-col overflow-y-auto bg-gradient-to-br from-gray-900 via-red-950 to-black relative">
+                 
+                 {/* Header - Dark Glassmorphism */}
+                 <header className="bg-black/20 backdrop-blur-md shadow-md p-4 border-b border-gray-800 sticky top-0 z-10">
                     <div className="flex justify-center mb-4">
                         <input 
                             type="text"
                             placeholder="Enter Session Topic..."
-                            className="w-full max-w-md text-xl font-semibold text-gray-900 bg-transparent border-b-2 border-gray-300 focus:border-teal-500 outline-none p-2 transition placeholder-gray-500 text-center"
+                            className="w-full max-w-md text-xl font-semibold text-white bg-transparent border-b-2 border-gray-600 focus:border-red-500 outline-none p-2 transition placeholder-gray-500 text-center"
                             value={sessionTopic}
                             onChange={e => setSessionTopic(e.target.value)}
                         />
                     </div>
 
-                    {/* Room Code and Buttons - Second Row */}
                     <div className="flex flex-wrap items-center justify-center gap-3">
                          <div className="text-center">
-                            <span className="text-xs text-gray-500">Room Code</span>
+                            <span className="text-xs text-gray-400">Room Code</span>
                             <div className="flex items-center gap-2">
-                                <p className="text-2xl font-bold tracking-widest text-teal-500">{roomCode}</p>
+                                <p className="text-2xl font-bold tracking-widest text-red-500 drop-shadow-md">{roomCode}</p>
                                 <button 
                                     onClick={() => {
                                         navigator.clipboard.writeText(roomCode);
                                         setLinkCopied(true);
                                         setTimeout(() => setLinkCopied(false), 2000);
                                     }}
-                                    className="bg-gray-100 hover:bg-gray-600 text-gray-900 p-2 rounded-lg transition"
-                                    title="Copy room code"
+                                    className="bg-gray-800 hover:bg-gray-700 text-white p-2 rounded-lg transition border border-gray-700"
                                 >
                                     📋
                                 </button>
@@ -682,15 +824,16 @@ return { total: liveResponses.length, words };
                             </div>
                         </div>
 
-                        <div className="h-8 w-px bg-gray-100"></div>
+                        <div className="h-8 w-px bg-gray-700"></div>
 
-                        <button onClick={() => setShowShareLink(true)} className="flex items-center bg-blue-600 text-gray-900 px-4 py-2 rounded-lg hover:bg-blue-700 transition" title="Share session link">
-                            <IconLink /> <span className="ml-1">Share Link</span>
+                        {/* Action Buttons - Updated for Dark Mode */}
+                        <button onClick={() => setShowShareLink(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition">
+                            <IconLink /> <span className="ml-1">Link</span>
                         </button>
-                        <button onClick={() => setShowParticipants(true)} className="flex items-center bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-600 transition">
-                            <IconUsers /> <span className="ml-1">Participants ({liveResponses.length})</span>
+                        <button onClick={() => setShowParticipants(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition">
+                            <IconUsers /> <span className="ml-1">({allParticipants.length})</span>
                         </button>
-                        <button onClick={() => setShowHistory(true)} className="flex items-center bg-purple-700 text-gray-900 px-4 py-2 rounded-lg hover:bg-purple-800 transition" title="View session history">
+                        <button onClick={() => setShowHistory(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition">
                             📊 <span className="ml-1">History</span>
                         </button>
                         <button 
@@ -698,17 +841,11 @@ return { total: liveResponses.length, words };
                                 playSound('click');
                                 setShowLeaderboard(true);
                             }} 
-                            className="flex items-center bg-yellow-600 text-gray-900 px-4 py-2 rounded-lg hover:bg-yellow-700 transition relative" 
-                            title="View leaderboard"
+                            className="flex items-center bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition shadow-lg" 
                         >
                             🏆 <span className="ml-1">Leaderboard</span>
-                            {leaderboard.length > 0 && (
-                                <span className="absolute -top-2 -right-2 bg-teal-500 text-gray-900 text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
-                                    {leaderboard.length}
-                                </span>
-                            )}
                         </button>
-                        <label className="flex items-center gap-2 bg-gray-100 text-gray-900 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-600 transition" title="Toggle gamification">
+                        <label className="flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-700 border border-gray-700 transition">
                             <input 
                                 type="checkbox" 
                                 checked={enableGamification} 
@@ -716,19 +853,19 @@ return { total: liveResponses.length, words };
                                     setEnableGamification(e.target.checked);
                                     playSound(e.target.checked ? 'success' : 'click');
                                 }} 
-                                className="w-4 h-4"
+                                className="w-4 h-4 accent-red-600"
                             />
                             <span>🎮 Gamify</span>
                         </label>
                         <button 
                             onClick={() => {
-                                if (window.confirm('Are you sure you want to exit? This will end the current session.')) {
+                                if (window.confirm('Are you sure you want to exit?')) {
                                     setView('home');
                                 }
                             }} 
-                            className="bg-gray-100 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-600 transition"
+                            className="bg-red-900/50 text-red-200 px-4 py-2 rounded-lg hover:bg-red-900 border border-red-900 transition"
                         >
-                           🚪 Exit
+                           🚪
                         </button>
                     </div>
                 </header>
@@ -737,21 +874,21 @@ return { total: liveResponses.length, words };
                     {renderCreator()}
                 </div>
                 
-                 <footer className="bg-white p-4 border-t border-gray-200 flex items-center justify-center sticky bottom-0 z-10">
+                 <footer className="bg-black/20 backdrop-blur-md p-4 border-t border-gray-800 flex items-center justify-center sticky bottom-0 z-10">
                     {isSessionLive && (
                         <div className="mr-6 text-center">
-                             <p className="font-bold text-green-500">Interaction is Live!</p>
-                             <button onClick={() => setShowResults(true)} className="text-sm text-teal-500 hover:underline">
-                                 View Analysis Modal
+                             <p className="font-bold text-green-400 animate-pulse">● LIVE</p>
+                             <button onClick={() => setShowResults(true)} className="text-sm text-gray-400 hover:text-white underline">
+                                 View Results
                             </button>
                         </div>
                     )}
                     <button 
                         onClick={handleStartSession}
                         disabled={isSessionLive}
-                        className={`px-8 py-3 text-lg font-bold rounded-full transition text-gray-900 ${isSessionLive ? 'bg-gray-500 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 shadow-lg transform hover:-translate-y-1'}`}
+                        className={`px-8 py-3 text-lg font-bold rounded-full transition text-white ${isSessionLive ? 'bg-gray-700 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 shadow-[0_0_20px_rgba(220,38,38,0.6)] hover:-translate-y-1'}`}
                     >
-                        {isSessionLive ? 'Live' : 'Start Interaction'}
+                        {isSessionLive ? 'Session Active' : 'Start Interaction'}
                     </button>
                     {isSessionLive && (activity.type === 'mcq' || activity.type === 'qa') && activity.questions && activity.questions.length > 1 && (
                         <button 
@@ -759,23 +896,21 @@ return { total: liveResponses.length, words };
                             disabled={(activity.currentQuestionIndex || 0) >= activity.questions.length - 1}
                             className={`ml-4 px-6 py-3 text-lg font-bold rounded-full transition shadow-lg transform hover:-translate-y-1 ${
                                 (activity.currentQuestionIndex || 0) >= activity.questions.length - 1
-                                    ? 'bg-gray-500 cursor-not-allowed text-gray-600'
-                                    : 'bg-blue-600 hover:bg-blue-700 text-gray-900'
+                                    ? 'bg-gray-700 cursor-not-allowed text-gray-400'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white'
                             }`}
                         >
-                            ➡️ Next Question ({(activity.currentQuestionIndex || 0) + 1}/{activity.questions.length})
+                            ➡️ Next
                         </button>
                     )}
                     {isSessionLive && (
                          <button 
                             onClick={() => {
-                                if (window.confirm('Are you sure you want to stop the session? This will end it for all students.')) {
-                                    handleStopSession();
-                                }
+                                if (window.confirm('Stop session?')) handleStopSession();
                             }}
-                            className="ml-4 px-8 py-3 text-lg font-bold rounded-full transition bg-gray-600 hover:bg-gray-100 text-gray-900 shadow-lg transform hover:-translate-y-1"
+                            className="ml-4 px-8 py-3 text-lg font-bold rounded-full transition bg-gray-700 hover:bg-gray-600 text-white shadow-lg"
                         >
-                            ⏹️ End Session
+                            ⏹️ Stop
                         </button>
                     )}
                 </footer>
@@ -871,20 +1006,41 @@ return { total: liveResponses.length, words };
             
             {/* Participants Modal */}
             {showParticipants && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg shadow-2xl p-6 w-full max-w-md text-gray-900">
-                        <h3 className="text-2xl font-bold mb-4 text-gray-900">Participants ({liveResponses.length})</h3>
-                        <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                           {liveResponses.length > 0 ? (
-                               <p className="text-gray-500">A list of participant names would appear here in a future version.</p>
-                           ) : (
-                               <p className="text-gray-500">No one has responded yet.</p>
-                           )}
-                        </div>
-                        <button onClick={() => setShowParticipants(false)} className="mt-6 w-full bg-gray-100 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button>
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
+        <div className="bg-gray-50 border border-gray-200 rounded-lg shadow-2xl p-6 w-full max-w-md text-gray-900">
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-2xl font-bold text-gray-900">
+                    Room Participants <span className="text-teal-600">({allParticipants.length})</span>
+                </h3>
+            </div>
+            
+            <div className="bg-white rounded-lg border border-gray-200 shadow-inner max-h-80 overflow-y-auto">
+                {allParticipants.length > 0 ? (
+                    <ul className="divide-y divide-gray-100">
+                        {allParticipants.map((p, index) => (
+                            <li key={index} className="p-3 flex items-center hover:bg-teal-50 transition-colors">
+                                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold mr-3">
+                                    {(p.name || 'A').charAt(0).toUpperCase()}
+                                </div>
+                                <span className="font-medium text-gray-800">
+                                    {p.name}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <div className="p-8 text-center text-gray-500">
+                        <p>Waiting for students to join...</p>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
+
+            <button onClick={() => setShowParticipants(false)} className="mt-6 w-full bg-gray-800 text-white px-4 py-3 rounded-lg hover:bg-gray-700 transition font-semibold">
+                Close
+            </button>
+        </div>
+    </div>
+)}
 
             {/* Share Link Modal */}
             {showShareLink && (
@@ -939,7 +1095,7 @@ return { total: liveResponses.length, words };
                             </button>
                         </div>
                         
-                        {leaderboard.length === 0 ? (
+                        {allParticipants.length === 0 ? (
                             <div className="text-center py-12">
                                 <p className="text-gray-600 text-lg">No players yet. Start a session to see rankings!</p>
                                 <p className="text-gray-500 text-sm mt-2">🎮 Enable gamification to track points</p>
@@ -956,67 +1112,25 @@ return { total: liveResponses.length, words };
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {leaderboard.map((player, idx) => (
-                                            <tr 
-                                                key={idx}
-                                                className={`border-b border-gray-200 hover:bg-yellow-50 transition-colors ${
-                                                    idx === 0 ? 'bg-yellow-100' : 
-                                                    idx === 1 ? 'bg-orange-50' : 
-                                                    idx === 2 ? 'bg-amber-50' : 
-                                                    'bg-white'
-                                                }`}
-                                            >
+                                        {allParticipants
+                                            .sort((a, b) => (b.score || 0) - (a.score || 0))
+                                            .map((player, idx) => (
+                                            <tr key={idx} className="border-b border-gray-200 hover:bg-yellow-50">
                                                 <td className="px-6 py-4">
-                                                    <span className={`text-3xl font-bold ${
-                                                        idx === 0 ? 'text-yellow-500' :
-                                                        idx === 1 ? 'text-gray-500' :
-                                                        idx === 2 ? 'text-orange-600' :
-                                                        'text-gray-600'
-                                                    }`}>
-                                                        {idx === 0 ? '🥇' : 
-                                                         idx === 1 ? '🥈' : 
-                                                         idx === 2 ? '🥉' : 
-                                                         `${idx + 1}.`}
-                                                    </span>
+                                                    <span className="text-2xl font-bold text-gray-600">#{idx + 1}</span>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <span className={`text-lg font-semibold ${
-                                                        idx < 3 ? 'text-gray-800' : 'text-gray-700'
-                                                    }`}>
-                                                        {player.name}
-                                                    </span>
+                                                    <span className="text-lg font-semibold text-gray-800">{player.name}</span>
                                                 </td>
                                                 <td className="px-4 py-4 text-center">
-                                                    <div className="flex justify-center gap-1">
-                                                        {player.badges && player.badges.length > 0 ? (
-                                                            player.badges.map((badge, badgeIdx) => (
-                                                                <span key={badgeIdx} className="text-xl" title={
-                                                                    badge === '🎯' ? 'First Response' :
-                                                                    badge === '✅' ? 'Correct Answer' :
-                                                                    badge === '⚡' ? 'Speed Demon' :
-                                                                    badge === '📝' ? 'Wordsmith' :
-                                                                    badge === '💯' ? 'Perfect Score' :
-                                                                    badge === '👑' ? 'Participation King' :
-                                                                    'Achievement'
-                                                                }>
-                                                                    {badge}
-                                                                </span>
-                                                            ))
-                                                        ) : (
-                                                            <span className="text-gray-500 text-sm">-</span>
-                                                        )}
+                                                    <div className="flex justify-center gap-1 flex-wrap">
+                                                        {player.badges && player.badges.map((b, i) => (
+                                                            <span key={i} className="text-lg">{b}</span>
+                                                        ))}
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
-                                                    <span className={`text-2xl font-bold ${
-                                                        idx === 0 ? 'text-yellow-600' :
-                                                        idx === 1 ? 'text-gray-600' :
-                                                        idx === 2 ? 'text-orange-600' :
-                                                        'text-gray-700'
-                                                    }`}>
-                                                        {player.points}
-                                                        <span className="text-sm ml-1 text-gray-500">pts</span>
-                                                    </span>
+                                                    <span className="text-2xl font-bold text-yellow-600">{player.score || 0} XP</span>
                                                 </td>
                                             </tr>
                                         ))}
