@@ -20,13 +20,10 @@ const TeacherView = ({ setView, roomCode }) => {
     const [isSessionLive, setIsSessionLive] = useState(false);
     const [liveResponses, setLiveResponses] = useState([]);
     const [linkCopied, setLinkCopied] = useState(false);
-<<<<<<< HEAD
     const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
-=======
     
     const [allParticipants, setAllParticipants] = useState([]);
     
->>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
     const [sessionHistory, setSessionHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
     const [showReport, setShowReport] = useState(false);
@@ -409,7 +406,6 @@ return { total: liveResponses.length, words };
         setIsSessionLive(true);
     };
 
-<<<<<<< HEAD
    const handleStopSession = async () => {
     if (!roomCode) return;
 
@@ -459,37 +455,6 @@ return { total: liveResponses.length, words };
         activityDetails: activity,
         responses: liveResponses,
         report,
-=======
-    const handleStopSession = async () => {
-        const sessionRef = doc(db, 'sessions', roomCode);
-        await updateDoc(sessionRef, {
-            isSessionLive: false,
-            currentActivity: null,
-        });
-        
-        const report = generateSessionReport(activity, liveResponses, sessionTopic, roomCode);
-        setSessionReport(report);
-        
-        const historyEntry = {
-            id: Date.now(),
-            roomCode: roomCode,
-            topic: sessionTopic || 'Untitled Session',
-            activityType: activity.type,
-            timestamp: new Date().toLocaleString(),
-            responseCount: liveResponses.length,
-            activityDetails: activity,
-            responses: liveResponses,
-            report: report
-        };
-        
-        const savedHistory = JSON.parse(localStorage.getItem('sessionHistory') || '[]');
-        const newHistory = [...savedHistory, historyEntry];
-        localStorage.setItem('sessionHistory', JSON.stringify(newHistory));
-        setSessionHistory(newHistory);
-        
-        setIsSessionLive(false);
-        setShowReport(true);
->>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
     };
 
     const savedHistory = JSON.parse(localStorage.getItem("sessionHistory") || "[]");
@@ -544,7 +509,6 @@ return { total: liveResponses.length, words };
         }
     };
 
-<<<<<<< HEAD
     // Gamification: Calculate points and badges for a response
    const calculatePoints = (response, activityStartTime, isFirstResponse = false) => {
     if (!enableGamification) return { points: 0, badges: [] };
@@ -598,52 +562,6 @@ return { total: liveResponses.length, words };
             points += 10;
         } else if (wordCount > 10) {
             points += 5;
-=======
-    const calculatePoints = (response, activityStartTime, isFirstResponse = false) => {
-        if (!enableGamification) return { points: 0, badges: [] };
-        
-        let points = 10; 
-        const badges = [];
-        
-        if (isFirstResponse) badges.push('🎯');
-        
-        if (activity.type === 'mcq' && response.answer) {
-            const correctOption = activity.options.find(opt => opt.isCorrect);
-            if (correctOption && response.answer === correctOption.text) {
-                points += 20; 
-                badges.push('✅');
-                
-                if (response.timestamp && activityStartTime) {
-                    const responseTime = response.timestamp.toMillis();
-                    const timeTaken = (responseTime - activityStartTime) / 1000;
-                    if (timeTaken <= 3) {
-                        points += 15; badges.push('⚡');
-                    } else if (timeTaken <= 5) {
-                        points += 10;
-                    } else if (timeTaken <= 10) {
-                        points += 5;
-                    }
-                }
-            }
-        }
-        
-        if (activity.type === 'qa' && response.answer) {
-            const wordCount = response.answer.split(' ').length;
-            if (wordCount > 50) {
-                points += 15; badges.push('📝');
-            } else if (wordCount > 20) {
-                points += 10;
-            } else if (wordCount > 10) {
-                points += 5;
-            }
-        }
-        if (activity.type === 'wordle' && response.answer) {
-            // If they submitted a response in Wordle mode, it means they won (via onGameEnd)
-            if (response.answer.toUpperCase() === (activity.wordleAnswer || '').toUpperCase()) {
-                points += 50; // Big reward for solving the puzzle!
-                badges.push('🧠'); // "Mastermind" badge
-            }
->>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
         }
     }
     
@@ -651,7 +569,6 @@ return { total: liveResponses.length, words };
     return { points, badges };
 };
 
-<<<<<<< HEAD
     // Update leaderboard from responses
         useEffect(() => {
             if (!enableGamification || !isSessionLive || liveResponses.length === 0) {
@@ -725,7 +642,6 @@ return { total: liveResponses.length, words };
             setLeaderboard(leaderboardData);
             // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [liveResponses, enableGamification, isSessionLive, activity]);
-=======
     // Update leaderboard (Using the PERMANENT Participants List now)
     useEffect(() => {
         if (!enableGamification || !isSessionLive) return;
@@ -740,7 +656,6 @@ return { total: liveResponses.length, words };
     }, [liveResponses, enableGamification, isSessionLive, activity]);
     // Note: You can remove this effect if you only use 'allParticipants' for the leaderboard UI.
     // I kept it empty to show where the old logic was.
->>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
 
     const sidebarItems = [
         { id: 'mcq', name: 'MCQ / Poll', icon: <IconListCheck /> },
@@ -766,22 +681,8 @@ return { total: liveResponses.length, words };
                 </div>
                 <nav className="flex-1 px-2 py-4 space-y-2">
                     {sidebarItems.map(item => (
-<<<<<<< HEAD
-                       <button
-                            key={item.id}
-                            onClick={() => {
-                                if (item.id === 'analytics') {
-                                    setShowAnalyticsModal(true);
-                                    return;
-                                }
-                                setCurrentActivityType(item.id);
-                            }}
-
-                            className={`w-full flex items-center p-3 rounded-lg transition-colors text-left ${isSidebarOpen ? '' : 'justify-center'} ${currentActivityType === item.id ? 'bg-teal-600 text-white shadow-md' : 'hover:bg-teal-50 hover:text-teal-700'}`}
-=======
                         <button key={item.id} onClick={() => setCurrentActivityType(item.id)}
                             className={`w-full flex items-center p-3 rounded-lg transition-colors text-left ${isSidebarOpen ? '' : 'justify-center'} ${currentActivityType === item.id ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]' : 'hover:bg-gray-800 hover:text-white'}`}
->>>>>>> 45d4e1e948999aff6d6c8fa6c3040fbfdc42f257
                         >
                             {item.icon}
                             {isSidebarOpen && <span className="whitespace-nowrap ml-2">{item.name}</span>}
