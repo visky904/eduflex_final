@@ -681,7 +681,16 @@ return { total: liveResponses.length, words };
                 </div>
                 <nav className="flex-1 px-2 py-4 space-y-2">
                     {sidebarItems.map(item => (
-                        <button key={item.id} onClick={() => setCurrentActivityType(item.id)}
+    <button
+        key={item.id}
+        onClick={() => {
+            if (item.id === "analytics") {
+                setShowAnalyticsModal(true);  
+                return;
+            }
+            setCurrentActivityType(item.id);
+        }}
+
                             className={`w-full flex items-center p-3 rounded-lg transition-colors text-left ${isSidebarOpen ? '' : 'justify-center'} ${currentActivityType === item.id ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]' : 'hover:bg-gray-800 hover:text-white'}`}
                         >
                             {item.icon}
