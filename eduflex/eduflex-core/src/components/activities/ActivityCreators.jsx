@@ -447,7 +447,7 @@ export const WordleCreator = ({ activity, setActivity }) => {
                 Choose a secret 5-letter word. Students will have 6 attempts to guess it.
             </p>
             <input
-                type="text"
+                type="password"
                 maxLength="5"
                 className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-900 text-center text-2xl tracking-widest uppercase focus:ring-2 focus:ring-teal-500 transition"
                 placeholder="APPLE"

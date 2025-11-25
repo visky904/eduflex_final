@@ -576,7 +576,6 @@ const TeacherView = ({ setView, roomCode }) => {
                         <div className="h-8 w-px bg-gray-700"></div>
                         <button onClick={() => setShowShareLink(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition"><IconLink /> <span className="ml-1">Link</span></button>
                         <button onClick={() => setShowParticipants(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition"><IconUsers /> <span className="ml-1">({allParticipants.length})</span></button>
-                        <button onClick={() => setShowHistory(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition">📊 <span className="ml-1">History</span></button>
                         <button onClick={() => {playSound('click'); setShowLeaderboard(true);}} className="flex items-center bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition shadow-lg">🏆 <span className="ml-1">Leaderboard</span></button>
                         
                         {/* GAMIFY TOGGLE */}
@@ -715,7 +714,7 @@ const TeacherView = ({ setView, roomCode }) => {
                                     <div key={act.id} className="p-4 bg-gray-50 rounded-lg border">
                                         <div className="flex justify-between">
                                             <div>
-                                                <p className="text-lg font-bold">{act.activityType.toUpperCase()}</p>
+<p className="text-xl font-bold text-gray-900 tracking-wide">{act.activityType.toUpperCase()}</p>
                                                 <p className="text-sm text-gray-500">{new Date(act.timestamp).toLocaleString()}</p>
                                             </div>
                                             <button onClick={() => generatePDF(act.report)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">📥 Download PDF</button>
