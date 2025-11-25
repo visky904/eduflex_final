@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, updateDoc, doc, deleteDoc, getDocs, getDoc, setDoc, increment, arrayUnion } from 'firebase/firestore';
 import { playSound, generateRoomCode } from '../utils/helpers';
-import { generatePDF } from '../utils/pdfGenerator';
+import { generatePDF,generateCombinedPDF } from '../utils/pdfGenerator';
 import { generateSessionReport } from '../utils/sessionUtils';
 import { McqCreator, WordCloudCreator, ReviewsCreator, FeedbackCreator, QaCreator, WordleCreator, ShortFeedbackCreator } from './activities/ActivityCreators';
 import { IconUsers, IconSettings, IconPlus, IconChevronLeft, IconListCheck, IconCloud, IconSmile, IconMessageSquare, IconHelpCircle, IconLink, IconCopy, IconTrash } from './Icons';
@@ -706,6 +706,11 @@ const TeacherView = ({ setView, roomCode }) => {
                             <p className="text-gray-500 text-center py-8">No activities have been completed yet.</p>
                         ) : (
                             <div className="space-y-4">
+                                  <button
+        onClick={() => generateCombinedPDF(completedActivities.map(a => a.report))}
+        className="w-full bg-purple-600 text-white px-4 py-3 rounded-lg hover:bg-purple-700 font-bold shadow-lg">
+        📄 Download Full Session Report
+    </button>
                                 {completedActivities.map((act) => (
                                     <div key={act.id} className="p-4 bg-gray-50 rounded-lg border">
                                         <div className="flex justify-between">
