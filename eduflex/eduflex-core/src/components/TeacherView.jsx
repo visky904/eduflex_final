@@ -417,14 +417,26 @@ return { total: liveResponses.length, words };
         isSessionLive: false,
         currentActivity: null,
     });
+let responsesToSend = liveResponses;
+let report;
 
-    // 3️⃣ Generate session report
-    const report = generateSessionReport(
-        activity,
-        liveResponses,
-        sessionTopic,
-        roomCode
-    );
+// 🔥 Special handling for WORDLE
+if (activity.type === "wordle") {
+    const progressRef = collection(db, "sessions", roomCode, "wordleProgress");
+    const snap = await getDocs(progressRef);
+
+    responsesToSend = snap.docs.map(d => ({
+        studentName: d.id,
+        ...d.data()
+    }));
+
+    report = generateSessionReport(activity, responsesToSend, sessionTopic, roomCode);
+} 
+// 🟦 Everything else uses liveResponses
+else {
+    report = generateSessionReport(activity, liveResponses, sessionTopic, roomCode);
+}
+
     setSessionReport(report);
 
     // 4️⃣ Create new completed activity entry
@@ -436,13 +448,24 @@ return { total: liveResponses.length, words };
         String(Date.now())
     );
 
+if(activity.type === "wordle"){
     await setDoc(activityRef, {
+    timestamp: new Date().toISOString(),
+    activityType: activity.type,
+    activityDetails: activity,
+    responses: responsesToSend,  // <-- FIXED
+    report,
+});
+
+}
+else
+  {  await setDoc(activityRef, {
         timestamp: new Date().toISOString(),
         activityType: activity.type,
         activityDetails: activity,
         responses: liveResponses,
         report,
-    });
+    });}
 
     // 5️⃣ Save to local history
     const historyEntry = {

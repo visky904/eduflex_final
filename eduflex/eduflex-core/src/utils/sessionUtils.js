@@ -54,29 +54,22 @@ export const generateSessionReport = (activity, responses, topic, roomCode) => {
             };
             break;
 
-        case 'wordcloud':
-            const wordFrequency = {};
-            responses.forEach(r => {
-                const words = r.answer.toLowerCase().split(/\s+/);
-                words.forEach(word => {
-                    if (word.length > 2) {
-                        wordFrequency[word] = (wordFrequency[word] || 0) + 1;
-                    }
-                });
-            });
-            report.analysis = {
-                question: activity.question,
-                totalWords: Object.keys(wordFrequency).length,
-                topWords: Object.entries(wordFrequency)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 10)
-                    .map(([word, count]) => ({ word, count })),
-                allResponses: responses.map(r => ({
-                    name: r.studentName || 'Anonymous',
-                    text: r.answer
-                }))
-            };
-            break;
+       case 'wordle':
+    report.analysis = {
+        totalPlayers: responses.length,
+        won: responses.filter(r => r.status === "won").length,
+        lost: responses.filter(r => r.status === "lost").length,
+        attempting: responses.filter(r => r.status === "attempting").length,
+        attemptsPerPlayer: responses.map(r => ({
+            name: r.studentName || 'Anonymous',
+            attempts: r.attempts,
+            lastGuess: r.lastGuess,
+            status: r.status,
+            timestamp: r.timestamp?.toDate?.()?.toLocaleString() || 'Unknown'
+        }))
+    };
+    break;
+
 
         case 'reviews':
             const reviewCounts = {};
