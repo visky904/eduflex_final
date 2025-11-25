@@ -26,7 +26,7 @@ export const generateSessionReport = (activity, responses, topic, roomCode) => {
             
             const currentMcqQ = activity.questions?.[0] || activity;
             
-            // ✅ FIX: Added "|| null" to prevent "undefined" error in Firebase
+            // ✅ FIX: Added "|| null" to prevent "undefined" crash in Firebase
             const correctOptionObj = (currentMcqQ.options || activity.options || []).find(opt => opt.isCorrect);
             const correctAnswer = correctOptionObj ? correctOptionObj.text : null;
             

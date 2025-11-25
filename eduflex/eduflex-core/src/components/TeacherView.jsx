@@ -411,6 +411,7 @@ const TeacherView = ({ setView, roomCode }) => {
         try { await deleteDoc(responseDoc); } catch (error) { console.error("Error deleting:", error); }
     };
 
+    // ✅ SCORING ENGINE
     const calculatePoints = (response, activityStartTime, isFirstResponse = false, enableGamification, activity) => {
         if (!enableGamification) return { points: 0, badges: [] };
         
@@ -520,7 +521,7 @@ const TeacherView = ({ setView, roomCode }) => {
                         radial-gradient(circle at 15% 20%, rgba(168, 85, 247, 0.25), transparent 40%), /* Purple Neon Top Left */
                         radial-gradient(circle at 85% 80%, rgba(59, 130, 246, 0.25), transparent 40%), /* Blue Neon Bottom Right */
                         linear-gradient(135deg, #2e1065 0%, #172554 50%, #020617 100%), /* Deep Purple -> Deep Blue -> Black */
-                        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23a78bfa' fill-opacity='0.08'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")
+                        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23a78bfa' fill-opacity='0.08'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")
                     `,
                     backgroundBlendMode: 'screen, screen, normal, overlay'
                 } : {
@@ -589,6 +590,25 @@ const TeacherView = ({ setView, roomCode }) => {
 
                 <div className="p-4 sm:p-6 lg:p-8 flex-1">
                     {renderCreator()}
+                    
+                    {/* ✅ RE-ADDED: WORDLE STATS SIDEBAR (Now below creator) */}
+                    {activity.type === "wordle" && (
+                        <div className={`mt-6 p-4 rounded-lg border backdrop-blur-sm transition-colors ${
+                            enableGamification 
+                            ? 'bg-black/40 border-purple-500/30 text-gray-200' 
+                            : 'bg-white/10 border-red-500/30 text-gray-100'
+                        }`}>
+                            <h4 className={`text-lg font-bold mb-4 text-center ${enableGamification ? 'text-purple-400' : 'text-red-400'}`}>
+                                Wordle Live Progress
+                            </h4>
+                            <div className="flex justify-around text-center">
+                                <div><span className="block text-green-400 font-bold text-2xl">{wordleStats.won}</span><span className="text-sm opacity-75">Correct</span></div>
+                                <div><span className="block text-yellow-400 font-bold text-2xl">{wordleStats.attempting}</span><span className="text-sm opacity-75">Attempting</span></div>
+                                <div><span className="block text-red-400 font-bold text-2xl">{wordleStats.lost}</span><span className="text-sm opacity-75">Failed</span></div>
+                                <div><span className="block text-white font-bold text-2xl">{wordleStats.total}</span><span className="text-sm opacity-75">Total</span></div>
+                            </div>
+                        </div>
+                    )}
                 </div>
                 
                  <footer className={`bg-black/20 backdrop-blur-md p-4 border-t ${enableGamification ? 'border-purple-500/30' : 'border-red-900/30'} flex items-center justify-center sticky bottom-0 z-20`}>
@@ -674,17 +694,6 @@ const TeacherView = ({ setView, roomCode }) => {
                             <button onClick={() => setShowResults(false)} className="flex-1 bg-gray-100 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button>
                             <button onClick={() => {const report = generateSessionReport(activity, liveResponses, sessionTopic, roomCode); generatePDF(report);}} className="flex-1 bg-blue-600 text-gray-900 px-4 py-2 rounded-lg hover:bg-blue-700 transition font-semibold">📥 Download PDF</button>
                         </div>
-                    </div>
-                </div>
-            )}
-            {activity.type === "wordle" && (
-                <div className="mt-4 bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
-                    <h4 className="text-lg font-bold text-gray-900 mb-2">Wordle Progress</h4>
-                    <div className="flex justify-around text-gray-600">
-                    <div><span className="text-green-400 font-bold text-xl">{wordleStats.won}</span><p>Correct</p></div>
-                    <div><span className="text-yellow-400 font-bold text-xl">{wordleStats.attempting}</span><p>Attempting</p></div>
-                    <div><span className="text-teal-400 font-bold text-xl">{wordleStats.lost}</span><p>Failed</p></div>
-                    <div><span className="text-gray-900 font-bold text-xl">{wordleStats.total}</span><p>Total</p></div>
                     </div>
                 </div>
             )}

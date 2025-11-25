@@ -47,6 +47,9 @@ const StudentView = ({ setView, initialJoinCode }) => {
     const [myScore, setMyScore] = useState(0);
     const [myBadges, setMyBadges] = useState([]);
     
+    // ✅ NEW: Track the unique ID of the activity to force resets
+    const [lastActivityId, setLastActivityId] = useState(null);
+
     // Mouse Tracker
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
@@ -91,6 +94,27 @@ const StudentView = ({ setView, initialJoinCode }) => {
         playSound('success');
         setTimeout(() => setShowConfetti(false), 3000);
     };
+
+    // --- RESET LOGIC (THE FIX) ---
+    useEffect(() => {
+        if (sessionData.isSessionLive && sessionData.currentActivity) {
+            const serverActivityId = sessionData.currentActivity.activityId; // Unique ID from Teacher
+            const serverQuestionIndex = sessionData.currentActivity.currentQuestionIndex || 0;
+
+            // 1. Completely New Activity? (ID changed)
+            if (serverActivityId && serverActivityId !== lastActivityId) {
+                setSubmitted(false);
+                setFeedbackText("");
+                setSubmittedQuestionIndex(-1);
+                setLastActivityId(serverActivityId); // Sync ID
+            } 
+            // 2. Same Activity, New Question? (Index changed)
+            else if (serverQuestionIndex !== submittedQuestionIndex) {
+                setSubmitted(false);
+                setFeedbackText("");
+            }
+        }
+    }, [sessionData, lastActivityId, submittedQuestionIndex]);
 
     useEffect(() => {
         if (!joined || !enteredCode || !studentName) return;
@@ -138,16 +162,6 @@ const StudentView = ({ setView, initialJoinCode }) => {
         }, 1000);
         return () => clearInterval(timer);
     }, [sessionData.currentActivity, submitted, autoSubmitTriggered]);
-
-    useEffect(() => {
-        if (sessionData.isSessionLive && sessionData.currentActivity) {
-            const currentIndex = sessionData.currentActivity.currentQuestionIndex || 0;
-            if (submittedQuestionIndex !== currentIndex) {
-                setSubmitted(false);
-                setFeedbackText("");
-            }
-        }
-    }, [sessionData.isSessionLive, sessionData.currentActivity?.currentQuestionIndex, sessionData.currentActivity?.type]);
 
     const handleCopyCode = async () => {
         if (enteredCode) {
@@ -360,14 +374,14 @@ const StudentView = ({ setView, initialJoinCode }) => {
     }
 
     return (
-        // ✅ DYNAMIC INTERACTIVE BACKGROUND (Same as Teacher)
+        // ✅ DYNAMIC INTERACTIVE BACKGROUND
         <div className="flex flex-col items-center justify-center min-h-screen font-sans text-gray-100 overflow-hidden relative transition-colors duration-1000">
             
             {/* Background Layer */}
             <div 
                 className="absolute inset-0 z-0 transition-all duration-1000"
                 style={sessionData.isGamified ? {
-                    // GAMIFIED: Cyberpunk "Neon Ripple"
+                    // GAMIFIED: Cyberpunk Neon Ripple
                     backgroundColor: '#0a0a12', 
                     backgroundImage: `
                         radial-gradient(
@@ -376,7 +390,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                             rgba(56, 189, 248, 0.10) 40%, 
                             transparent 80%
                         ),
-                        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.08'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2V6h4V4H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")
+                        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.08'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")
                     `,
                 } : {
                     // DEFAULT: Deep Red & Black Gradient
@@ -386,7 +400,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
 
             {showConfetti && <Confetti />}
 
-            {/* --- XP BAR (CENTERED) --- */}
+            {/* XP Bar - Centered & Constrained Width */}
             <div className="fixed top-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-md z-50">
                 <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-xl p-2 flex items-center gap-3 border-b-4 border-teal-600 animate-slide-down">
                     <div className="relative shrink-0">
@@ -401,7 +415,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                 </div>
             </div>
 
-            {/* --- EXIT BUTTON (BOTTOM RIGHT) --- */}
+            {/* Exit Button - Moved to Bottom Right */}
             <button 
                 onClick={() => setView('home')} 
                 className="fixed bottom-6 right-6 bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-full shadow-lg transition-all duration-200 flex items-center gap-2 z-50 hover:scale-105"
@@ -411,7 +425,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                 <span className="hidden sm:inline">Exit</span>
             </button>
 
-            {/* Content Wrapper to sit above background */}
+            {/* Content Wrapper */}
             <div className="relative z-10 w-full max-w-2xl p-4">
                 {!sessionData.isSessionLive ? (
                     <div className="animate-fade-in text-center">
