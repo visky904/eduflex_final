@@ -392,7 +392,7 @@ return { total: liveResponses.length, words };
         });
         await Promise.all(deletePromises);
 
-        const activityToSend = { ...activity };
+        const activityToSend = { ...activity,activityId: Date.now() };
         if ((activity.type === 'mcq' || activity.type === 'qa') && activity.questions) {
             activityToSend.currentQuestionIndex = 0;
         }

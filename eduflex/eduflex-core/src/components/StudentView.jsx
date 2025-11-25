@@ -82,6 +82,14 @@ const StudentView = ({ setView, initialJoinCode }) => {
 
         return () => clearInterval(timer);
     }, [sessionData.currentActivity, submitted, autoSubmitTriggered]);
+useEffect(() => {
+    if (!sessionData.currentActivity) return;
+
+    // 🔥 When teacher starts new activity, always reset UI
+    setSubmitted(false);
+    setFeedbackText("");
+    setSubmittedQuestionIndex(-1);
+}, [sessionData.currentActivity?.activityId]);
 
     // Auto-join logic
     useEffect(() => {
