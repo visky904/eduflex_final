@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, updateDoc, doc, deleteDoc, getDocs, getDoc, setDoc, increment, arrayUnion } from 'firebase/firestore';
 import { playSound, generateRoomCode } from '../utils/helpers';
@@ -302,8 +303,30 @@ const TeacherView = ({ setView, roomCode }) => {
     };
 
     const handleCopyLink = () => {
+        // Use the current URL, but if it's localhost, provide a note to the user
         const shareLink = `${window.location.origin}/join/${roomCode}`;
         navigator.clipboard.writeText(shareLink).then(() => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); });
+    };
+
+    const getShareableUrl = () => {
+        // Get the current hostname
+        const hostname = window.location.hostname;
+        const port = window.location.port;
+        const protocol = window.location.protocol;
+        
+        // Use the current URL - if accessed via IP, it will work on phones
+        return `${protocol}//${hostname}${port ? ':' + port : ''}/join/${roomCode}`;
+    };
+
+    const handleDownloadQR = () => {
+        const canvas = document.getElementById('qr-code-canvas');
+        if (canvas) {
+            const url = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `eduflex-session-${roomCode}.png`;
+            link.click();
+        }
     };
 
     const handleStartSession = async () => {
@@ -761,6 +784,73 @@ const TeacherView = ({ setView, roomCode }) => {
                                 </table>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+            {showShareLink && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
+                    <div className="bg-white border border-gray-300 rounded-lg shadow-2xl p-6 w-full max-w-2xl text-gray-900">
+                        <h3 className="text-2xl font-bold mb-4 text-teal-700">📤 Share Session</h3>
+                        
+                        {window.location.hostname === 'localhost' && (
+                            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
+                                <div className="flex">
+                                    <div className="flex-shrink-0">
+                                        <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <div className="ml-3">
+                                        <p className="text-sm text-yellow-700">
+                                            <strong>For phone scanning:</strong> Access this page using your computer's IP address (e.g., http://172.27.16.1:3000) instead of localhost, then generate the QR code.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        
+                        <div className="grid md:grid-cols-2 gap-6 mb-6">
+                            {/* QR Code Section */}
+                            <div className="flex flex-col items-center justify-center bg-gray-50 border-2 border-gray-300 rounded-lg p-6">
+                                <h4 className="text-lg font-bold text-gray-800 mb-3">📱 Scan QR Code</h4>
+                                <div className="bg-white p-4 rounded-lg shadow-md">
+                                    <QRCodeCanvas 
+                                        id="qr-code-canvas"
+                                        value={getShareableUrl()}
+                                        size={200}
+                                        level="H"
+                                        includeMargin={true}
+                                    />
+                                </div>
+                                <button 
+                                    onClick={handleDownloadQR} 
+                                    className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition font-semibold flex items-center gap-2"
+                                >
+                                    💾 Download QR Code
+                                </button>
+                            </div>
+                            
+                            {/* Link Section */}
+                            <div className="flex flex-col justify-center">
+                                <h4 className="text-lg font-bold text-gray-800 mb-3">🔗 Share Link</h4>
+                                <p className="text-gray-600 text-sm mb-3">Students can click this link to join:</p>
+                                <div className="bg-gray-50 border border-gray-300 rounded-lg p-3 mb-4">
+                                    <div className="flex items-center justify-between">
+                                        <code className="text-xs text-gray-800 break-all flex-1 mr-2">{getShareableUrl()}</code>
+                                        <button onClick={handleCopyLink} className="bg-teal-600 text-white px-3 py-2 rounded-lg hover:bg-teal-700 transition flex-shrink-0 text-sm">
+                                            {linkCopied ? '✓ Copied!' : '📋 Copy'}
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
+                                    <p className="text-sm text-gray-700 mb-2"><strong>Room Code:</strong></p>
+                                    <p className="text-3xl font-bold text-teal-600 text-center tracking-wider">{roomCode}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button onClick={() => setShowShareLink(false)} className="w-full bg-gray-200 text-gray-900 py-3 rounded-lg hover:bg-gray-300 font-semibold transition">Close</button>
                     </div>
                 </div>
             )}
