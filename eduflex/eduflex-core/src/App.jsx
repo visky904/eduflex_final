@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import { db } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { generateRoomCode } from './utils/helpers';
@@ -27,24 +26,25 @@ const HomePage = ({ setView }) => (
     </div>
 );
 
-// Wrapper component for joining with room code
-const JoinSession = () => {
-    const { roomCode } = useParams();
-    const navigate = useNavigate();
-    
-    return <StudentView setView={(view) => {
-        if (view === 'home') navigate('/');
-    }} initialJoinCode={roomCode?.toUpperCase()} />;
-};
-
-// Main App component
-function AppContent() {
-    const navigate = useNavigate();
+export default function App() {
+    const [view, setView] = useState(() => localStorage.getItem('currentView') === 'teacher' ? 'teacher' : 'home');
     const [roomCode, setRoomCode] = useState(() => localStorage.getItem('teacherRoomCode') || null);
+    const [initialJoinCode, setInitialJoinCode] = useState(null);
 
-    useEffect(() => { 
-        if (roomCode) localStorage.setItem('teacherRoomCode', roomCode); 
-    }, [roomCode]);
+    useEffect(() => { if (view) localStorage.setItem('currentView', view); }, [view]);
+    useEffect(() => { if (roomCode) localStorage.setItem('teacherRoomCode', roomCode); }, [roomCode]);
+
+    useEffect(() => {
+        const pathname = window.location.pathname;
+        const joinMatch = pathname.match(/\/join\/([A-Z0-9]+)/i);
+        if (joinMatch) {
+            setInitialJoinCode(joinMatch[1].toUpperCase());
+            setView('student');
+        } else if (pathname === '/' || pathname === '/index.html') {
+            localStorage.removeItem('currentView');
+            setView('home');
+        }
+    }, []);
 
     const handleSetView = async (newView) => {
         if (newView === 'teacher') {
@@ -56,7 +56,7 @@ function AppContent() {
                     currentActivity: null,
                 });
                 setRoomCode(newRoomCode);
-                navigate('/teacher');
+                setView('teacher');
             } catch (error) {
                 console.error("Error creating session:", error);
                 alert("Could not create a new session.");
@@ -64,23 +64,16 @@ function AppContent() {
         } else if (newView === 'home') {
             localStorage.removeItem('currentView');
             localStorage.removeItem('teacherRoomCode');
+            setView(newView);
             setRoomCode(null);
-            navigate('/');
-        } else if (newView === 'student') {
-            navigate('/student');
+        } else {
+            setView(newView);
         }
     };
 
-    return (
-        <Routes>
-            <Route path="/" element={<HomePage setView={handleSetView} />} />
-            <Route path="/teacher" element={<TeacherView setView={handleSetView} roomCode={roomCode} />} />
-            <Route path="/student" element={<StudentView setView={handleSetView} initialJoinCode={null} />} />
-            <Route path="/join/:roomCode" element={<JoinSession />} />
-        </Routes>
-    );
-}
-
-export default function App() {
-    return <AppContent />;
+    switch (view) {
+        case 'teacher': return <TeacherView setView={handleSetView} roomCode={roomCode} />;
+        case 'student': return <StudentView setView={handleSetView} initialJoinCode={initialJoinCode} />;
+        default: return <HomePage setView={handleSetView} />;
+    }
 }
