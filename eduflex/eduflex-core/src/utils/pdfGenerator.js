@@ -606,7 +606,7 @@ export const generateCombinedPDF = (allReports) => {
     `);
 
     // --- LOOP THROUGH ALL REPORTS ---
-    allReports.forEach((report, i) => {
+[...allReports].reverse().forEach((report, i) => {
         win.document.write(`
             ${i > 0 ? `<div class='page-break'></div>` : ""}
 

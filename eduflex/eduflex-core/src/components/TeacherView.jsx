@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, updateDoc, doc, deleteDoc, getDocs, getDoc, setDoc, increment, arrayUnion } from 'firebase/firestore';
 import { playSound } from '../utils/helpers';
-import { generatePDF } from '../utils/pdfGenerator';
+import { generatePDF,generateCombinedPDF } from '../utils/pdfGenerator';
 import { generateSessionReport } from '../utils/sessionUtils';
 import { McqCreator, WordCloudCreator, ReviewsCreator, FeedbackCreator, QaCreator, WordleCreator, ShortFeedbackCreator } from './activities/ActivityCreators';
 import { IconUsers, IconChevronLeft, IconListCheck, IconCloud, IconSmile, IconMessageSquare, IconHelpCircle, IconLink, IconCopy } from './Icons';
@@ -172,7 +172,9 @@ const TeacherView = ({ setView, roomCode }) => {
     }, [liveResponses, displayActivity]);
     
     const calculatePoints = (response, activityStartTime, isFirstResponse = false, enableGamification, activity) => {
-        if (!enableGamification) return { points: 0, badges: [] };
+if (!enableGamification || ['wordcloud','reviews','feedback'].includes(activity.type)) {
+    return { points: 0, badges: [] };
+}
         let points = 10; const badges = [];
         if (isFirstResponse) badges.push("🎯");
         if (activity.type === "mcq" && response.answer) {
@@ -196,6 +198,9 @@ const TeacherView = ({ setView, roomCode }) => {
 
     useEffect(() => {
         if (!isSessionLive || !enableGamification || liveResponses.length === 0 || !liveActivity) return;
+        // Skip scoring for subjective activities
+if (['wordcloud','reviews','feedback'].includes(liveActivity.type)) return;
+
         const processScores = async () => {
             const updates = [];
             const unscoredResponses = liveResponses.filter(r => !r.pointsAwarded);
@@ -401,7 +406,14 @@ const TeacherView = ({ setView, roomCode }) => {
                         </div>
                         <button onClick={() => setShowShareLink(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition"><IconLink /> <span className="ml-1">Link</span></button>
                         <button onClick={() => setShowParticipants(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition"><IconUsers /> <span className="ml-1">({allParticipants.length})</span></button>
-                        <button onClick={() => {playSound('click'); setShowLeaderboard(true);}} className="flex items-center bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition shadow-lg">🏆 <span className="ml-1">Leaderboard</span></button>
+{!['wordcloud','reviews','feedback'].includes(currentActivityType) && (
+    <button 
+        onClick={() => {playSound('click'); setShowLeaderboard(true);}} 
+        className="flex items-center bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition shadow-lg"
+    >
+        🏆 <span className="ml-1">Leaderboard</span>
+    </button>
+)}
                         <label className={`flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-700 border transition ${enableGamification ? 'border-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'border-gray-700'}`}>
                             <input type="checkbox" checked={enableGamification} onChange={(e) => {setEnableGamification(e.target.checked); playSound(e.target.checked ? 'success' : 'click');}} className={`w-4 h-4 ${enableGamification ? 'accent-purple-500' : 'accent-red-600'}`} /><span>🎮 Gamify</span>
                         </label>
@@ -487,8 +499,19 @@ const TeacherView = ({ setView, roomCode }) => {
                     <div className="bg-white border border-gray-300 rounded-lg shadow-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
                         <h2 className="text-2xl font-bold mb-4 text-teal-700">📊 Session Analytics</h2>
                         {completedActivities.length === 0 ? (<p className="text-gray-500 text-center py-8">No activities have been completed yet.</p>) : (
-                            <div className="space-y-4">{completedActivities.map((act) => (<div key={act.id} className="p-4 bg-gray-50 rounded-lg border"><div className="flex justify-between"><div><p className="text-lg font-bold">{act.activityType.toUpperCase()}</p><p className="text-sm text-gray-500">{new Date(act.timestamp).toLocaleString()}</p></div><button onClick={() => generatePDF(act.report)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">📥 Download PDF</button></div></div>))}</div>
+                            <div className="space-y-4">{completedActivities.map((act) => (<div key={act.id} className="p-4 bg-gray-50 rounded-lg border"><div className="flex justify-between"><div><p className="text-lg font-bold text-gray-900">{act.activityType.toUpperCase()}</p><p className="text-sm text-gray-500">{new Date(act.timestamp).toLocaleString()}</p></div><button onClick={() => generatePDF(act.report)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">📥 Download PDF</button></div></div>))}</div>
+
                         )}
+                        {/* NEW BUTTON → Download Combined Report */}
+{completedActivities.length > 0 && (
+    <button
+        onClick={() => generateCombinedPDF(completedActivities.map(a => a.report))}
+        className="w-full mt-6 bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-lg font-bold shadow-md transition"
+    >
+        📘 Download Full Session Report (All Activities)
+    </button>
+)}
+
                         <button onClick={() => setShowAnalyticsModal(false)} className="mt-6 w-full bg-gray-200 text-gray-900 py-2 rounded hover:bg-gray-300">Close</button>
                     </div>
                 </div>
