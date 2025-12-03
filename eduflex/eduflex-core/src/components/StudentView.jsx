@@ -1,24 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { doc, onSnapshot, collection, addDoc, getDoc, updateDoc, setDoc } from 'firebase/firestore'; 
+import { doc, onSnapshot, collection, addDoc, getDoc, setDoc } from 'firebase/firestore'; 
 import { playSound, filterProfanity } from '../utils/helpers';
 import { WordleGame } from './WordleGame';
 
-// --- CUSTOM CONFETTI COMPONENT ---
+// --- GAMIFICATION CONSTANTS ---
+const AVATARS = ['🐼', '🦊', '🐯', '🦄', '🐲', '👾', '🤖', '👻', '🦁', '🐸', '🚀', '🐱'];
+
+const getRankTitle = (xp) => {
+    if (xp >= 500) return "👑 LEGEND";
+    if (xp >= 300) return "🔥 MYTHIC";
+    if (xp >= 200) return "⚔️ MASTER";
+    if (xp >= 100) return "🛡️ VETERAN";
+    if (xp >= 50) return "⚔️ APPRENTICE";
+    return "🌱 NOVICE";
+};
+
+// --- CUSTOM CONFETTI ---
 const Confetti = () => {
     const [particles, setParticles] = useState([]);
     useEffect(() => {
         const colors = ['#EF476F', '#FFD166', '#06D6A0', '#118AB2', '#073B4C', '#ffffff'];
-        const newParticles = [];
-        for (let i = 0; i < 100; i++) {
-            newParticles.push({
-                id: i, x: 50, y: 50,
-                angle: Math.random() * 360,
-                velocity: Math.random() * 20 + 10,
-                color: colors[Math.floor(Math.random() * colors.length)],
-                delay: Math.random() * 0.2
-            });
-        }
+        const newParticles = Array.from({ length: 100 }).map((_, i) => ({
+            id: i, x: 50, y: 50,
+            angle: Math.random() * 360,
+            velocity: Math.random() * 20 + 10,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            delay: Math.random() * 0.2
+        }));
         setParticles(newParticles);
     }, []);
     return (
@@ -34,44 +43,39 @@ const Confetti = () => {
 const StudentView = ({ setView, initialJoinCode }) => {
     const [enteredCode, setEnteredCode] = useState(initialJoinCode || '');
     const [studentName, setStudentName] = useState('');
+    const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]); 
+    
     const [joined, setJoined] = useState(false);
     const [submitted, setSubmitted] = useState(false);
-    const [submittedQuestionIndex, setSubmittedQuestionIndex] = useState(-1);
+    
+    // NAVIGATION STATE
+    const [localIndex, setLocalIndex] = useState(0); 
+    const [playlistIndex, setPlaylistIndex] = useState(0); 
+    const [lastActivityId, setLastActivityId] = useState(null);
+
     const [feedbackText, setFeedbackText] = useState("");
     const [error, setError] = useState("");
     const [sessionData, setSessionData] = useState({ isSessionLive: false, currentActivity: null, isGamified: false });
-    const [codeCopied, setCodeCopied] = useState(false);
     const [timeLeft, setTimeLeft] = useState(null);
     const [autoSubmitTriggered, setAutoSubmitTriggered] = useState(false);
     const [showConfetti, setShowConfetti] = useState(false);
     const [myScore, setMyScore] = useState(0);
     const [myBadges, setMyBadges] = useState([]);
-    
-    const [lastActivityId, setLastActivityId] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const bgMusicRef = useRef(new Audio('/game-music.mp3'));
 
-    // --- Mouse Follower Logic ---
     useEffect(() => {
-        const handleMouseMove = (e) => {
-            if (sessionData.isGamified) {
-                setMousePos({ x: e.clientX, y: e.clientY });
-            }
-        };
+        const handleMouseMove = (e) => { if (sessionData.isGamified) setMousePos({ x: e.clientX, y: e.clientY }); };
         window.addEventListener('mousemove', handleMouseMove);
         return () => window.removeEventListener('mousemove', handleMouseMove);
     }, [sessionData.isGamified]);
 
-    // --- Manage Audio ---
     useEffect(() => {
         const music = bgMusicRef.current;
         music.loop = true;
         music.volume = 0.3;
-        if (joined && sessionData.isGamified) {
-            music.play().catch(e => console.log("Audio blocked until interaction"));
-        } else {
-            music.pause();
-        }
+        if (joined && sessionData.isGamified) { music.play().catch(e => console.log("Audio blocked")); } 
+        else { music.pause(); }
         return () => music.pause();
     }, [joined, sessionData.isGamified]);
 
@@ -88,24 +92,43 @@ const StudentView = ({ setView, initialJoinCode }) => {
         setTimeout(() => setShowConfetti(false), 3000);
     };
 
-    // --- Reset Logic ---
+    // --- ACTIVITY RESOLVER ---
+    let currentActivity = sessionData.currentActivity;
+    let isPlaylistMode = false;
+
+    if (currentActivity && currentActivity.type === 'playlist') {
+        isPlaylistMode = true;
+        currentActivity = currentActivity.queue[playlistIndex];
+    }
+
+    const isStudentPacedQuestions = currentActivity?.settings?.isStudentPaced;
+    const currentQuestionIndex = (isStudentPacedQuestions || isPlaylistMode) ? localIndex : (currentActivity?.currentQuestionIndex || 0);
+
+    // --- RESET LOGIC ---
     useEffect(() => {
         if (sessionData.isSessionLive && sessionData.currentActivity) {
             const serverActivityId = sessionData.currentActivity.activityId;
-            const serverQuestionIndex = sessionData.currentActivity.currentQuestionIndex || 0;
-
+            
             if (serverActivityId && serverActivityId !== lastActivityId) {
-                setSubmitted(false);
-                setFeedbackText("");
-                setSubmittedQuestionIndex(-1);
+                setSubmitted(false); 
+                setFeedbackText(""); 
                 setLastActivityId(serverActivityId);
+                setLocalIndex(0); 
+                setPlaylistIndex(0);
             } 
-            else if (serverQuestionIndex !== submittedQuestionIndex) {
-                setSubmitted(false);
-                setFeedbackText("");
+            
+            if (!isStudentPacedQuestions && !isPlaylistMode) {
+                 const serverQIndex = sessionData.currentActivity.currentQuestionIndex || 0;
+                 if (serverQIndex !== lastServerIndexRef.current) {
+                     setSubmitted(false);
+                     setFeedbackText("");
+                     lastServerIndexRef.current = serverQIndex;
+                 }
             }
         }
-    }, [sessionData, lastActivityId, submittedQuestionIndex]);
+    }, [sessionData, lastActivityId, isStudentPacedQuestions, isPlaylistMode]);
+    
+    const lastServerIndexRef = useRef(-1);
 
     useEffect(() => {
         if (!joined || !enteredCode || !studentName) return;
@@ -121,13 +144,10 @@ const StudentView = ({ setView, initialJoinCode }) => {
     }, [joined, enteredCode, studentName]);
 
     useEffect(() => {
-        if (!sessionData.currentActivity || submitted) {
-            setTimeLeft(null);
-            setAutoSubmitTriggered(false);
-            return;
-        }
-        const currentQuestion = sessionData.currentActivity.questions?.[0];
-        if (currentQuestion?.timeLimit && sessionData.currentActivity.type === 'qa') {
+        if (!currentActivity || submitted) { setTimeLeft(null); setAutoSubmitTriggered(false); return; }
+        const currentQuestion = currentActivity.questions?.[currentQuestionIndex];
+        
+        if (currentQuestion?.timeLimit && currentActivity.type === 'qa') {
             setTimeLeft(currentQuestion.timeLimit);
             setAutoSubmitTriggered(false);
         } else {
@@ -141,10 +161,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                     clearInterval(timer);
                     if (!autoSubmitTriggered) {
                         setAutoSubmitTriggered(true);
-                        setTimeout(() => {
-                            if (feedbackText.trim()) handleSubmit(feedbackText);
-                            else handleSubmit('(No answer provided)');
-                        }, 100);
+                        setTimeout(() => { if (feedbackText.trim()) handleSubmit(feedbackText); else handleSubmit('(No answer provided)'); }, 100);
                     }
                     return 0;
                 }
@@ -152,82 +169,45 @@ const StudentView = ({ setView, initialJoinCode }) => {
             });
         }, 1000);
         return () => clearInterval(timer);
-    }, [sessionData.currentActivity, submitted, autoSubmitTriggered]);
-
-    const handleCopyCode = async () => {
-        if (enteredCode) {
-            try {
-                await navigator.clipboard.writeText(enteredCode);
-                setCodeCopied(true);
-                setTimeout(() => setCodeCopied(false), 2000);
-            } catch (err) { console.error("Failed to copy code:", err); }
-        }
-    };
+    }, [currentActivity, submitted, autoSubmitTriggered, currentQuestionIndex]);
 
     const handleJoin = async (e) => {
         e.preventDefault();
         setError(""); 
         if (!studentName.trim()) { setError("Please enter your name."); return; }
         if (!enteredCode) { setError("Please enter a room code."); return; }
-        
         const sessionRef = doc(db, 'sessions', enteredCode.toUpperCase());
         try {
             const docSnap = await getDoc(sessionRef);
             if (docSnap.exists()) {
                 const participantRef = doc(db, 'sessions', enteredCode.toUpperCase(), 'participants', studentName);
-                await setDoc(participantRef, {
-                    name: studentName,
-                    joinedAt: new Date(),
-                    score: 0,
-                    badges: []
-                }, { merge: true });
+                await setDoc(participantRef, { name: studentName, avatar: selectedAvatar, joinedAt: new Date(), score: 0, badges: [] }, { merge: true });
                 setJoined(true);
-            } else {
-                setError("Invalid Room Code. Please try again.");
-            }
-        } catch (err) {
-            console.error("Error checking session:", err);
-            setError("Could not connect to the server.");
-        }
+            } else { setError("Invalid Room Code."); }
+        } catch (err) { console.error(err); setError("Connection failed."); }
     };
     
     useEffect(() => {
-        if (!joined || !enteredCode) return;
+        if (!enteredCode) return; 
         const sessionRef = doc(db, 'sessions', enteredCode.toUpperCase());
         const unsubscribe = onSnapshot(sessionRef, (docSnap) => {
-            if (docSnap.exists()) {
-                setSessionData(docSnap.data());
-            } else {
-                alert("The session has ended.");
-                setView('home');
-            }
+            if (docSnap.exists()) { setSessionData(docSnap.data()); } 
+            else if (joined) { alert("Session ended."); setView('home'); }
         });
         return () => unsubscribe();
-    }, [joined, enteredCode, setView]); // Removed initialJoinCode check to always listen
+    }, [joined, enteredCode, setView]);
 
     const handleSubmit = async (answerPayload) => {
-        if (!enteredCode || !sessionData.currentActivity) return;
+        if (!enteredCode || !currentActivity) return;
         let finalAnswer = answerPayload;
-        if (sessionData.currentActivity.settings.profanityFilter && sessionData.currentActivity.type !== 'wordcloud') {
+        if (currentActivity.settings?.profanityFilter && currentActivity.type !== 'wordcloud') {
             finalAnswer = filterProfanity(answerPayload);
         }
 
-        const activity = sessionData.currentActivity;
-        const currentIndex = activity.currentQuestionIndex || 0;
-        
-        if (activity.type === 'mcq') {
-            const currentQ = activity.questions?.[currentIndex] || activity;
+        if (currentActivity.type === 'mcq') {
+            const currentQ = currentActivity.questions?.[currentQuestionIndex] || currentActivity;
             const correctOption = currentQ.options?.find(opt => opt.isCorrect);
-            if (correctOption && finalAnswer.trim() === correctOption.text.trim()) {
-                triggerConfetti();
-            }
-        } else if (activity.type === 'qa') {
-            const currentQ = activity.questions?.[0];
-            if (currentQ?.correctAnswer && currentQ.correctAnswer.trim() !== "") {
-                if (finalAnswer.trim().toLowerCase() === currentQ.correctAnswer.trim().toLowerCase()) {
-                    triggerConfetti();
-                }
-            }
+            if (correctOption && finalAnswer.trim() === correctOption.text.trim()) { triggerConfetti(); }
         }
 
         const responsesCol = collection(db, 'sessions', enteredCode.toUpperCase(), 'responses');
@@ -235,56 +215,84 @@ const StudentView = ({ setView, initialJoinCode }) => {
             await addDoc(responsesCol, {
                 answer: finalAnswer,
                 studentName: studentName,
-                type: sessionData.currentActivity.type,
-                questionIndex: currentIndex,
+                type: currentActivity.type,
+                // CRITICAL FIX: Send playlistId so TeacherView knows which item was answered
+                activityId: currentActivity.playlistId || 'single', 
+                questionIndex: currentQuestionIndex,
                 timestamp: new Date()
             });
             setSubmitted(true);
-            setSubmittedQuestionIndex(currentIndex);
-        } catch (error) {
-            console.error("Error submitting:", error);
-            alert("Could not submit.");
-        }
+        } catch (error) { console.error("Submit error:", error); }
     };
     
-    const renderActivity = () => {
-        if (!sessionData.currentActivity) return null;
-        const { currentActivity } = sessionData;
-        const currentIndex = currentActivity.currentQuestionIndex || 0;
+    const handleNext = () => {
         const totalQuestions = currentActivity.questions?.length || 1;
-        const isLastQuestion = currentIndex >= totalQuestions - 1;
-        const isMultiQuestion = (currentActivity.type === 'mcq' || currentActivity.type === 'qa') && totalQuestions > 1;
         
-        if(submitted && isMultiQuestion && !isLastQuestion) {
-            return (
-                <div className="text-center animate-fade-in">
-                    <h2 className="text-2xl font-bold text-green-600">Answer Submitted!</h2>
-                    <p className="mt-2 text-gray-600 text-lg">Question {currentIndex + 1} of {totalQuestions} completed</p>
-                    <p className="mt-4 text-gray-800 font-semibold text-xl animate-pulse">Waiting for teacher...</p>
-                    <div className="mt-4 flex justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-4 border-teal-600"></div></div>
-                </div>
-            )
+        if (currentQuestionIndex < totalQuestions - 1) {
+            setLocalIndex(prev => prev + 1);
+            setSubmitted(false);
+            setFeedbackText("");
+            window.scrollTo(0,0);
+            return;
         }
+
+        if (isPlaylistMode && sessionData.currentActivity.queue && playlistIndex < sessionData.currentActivity.queue.length - 1) {
+            setPlaylistIndex(prev => prev + 1);
+            setLocalIndex(0); 
+            setSubmitted(false);
+            setFeedbackText("");
+            window.scrollTo(0,0);
+            return;
+        }
+    };
+
+    const renderActivity = () => {
+        if (!currentActivity) return <p>Waiting for teacher...</p>;
+        
+        const totalQuestions = currentActivity.questions?.length || 1;
+        const isLastQuestion = currentQuestionIndex >= totalQuestions - 1;
+        const isLastActivity = !isPlaylistMode || (playlistIndex >= sessionData.currentActivity.queue.length - 1);
+        
         if(submitted) {
             return (
-                <div className="text-center animate-fade-in">
-                    <h2 className="text-2xl font-bold text-gray-800">Thank you!</h2>
-                    <p className="mt-2 text-gray-600">Your response has been submitted.</p>
+                <div className="text-center animate-fade-in py-8">
+                    <div className="text-6xl mb-4">🚀</div>
+                    <h2 className="text-3xl font-bold text-gray-800">Answer Sent!</h2>
+                    
+                    {((!isLastQuestion) || (isPlaylistMode && !isLastActivity)) ? (
+                        <div className="mt-6">
+                            <button onClick={handleNext} className="bg-teal-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg hover:bg-teal-700 transform transition hover:scale-105">
+                                {!isLastQuestion ? "Next Question ➡️" : "Next Activity ⏭️"}
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="mt-6">
+                            <p className="text-gray-600">All done! Check the leaderboard.</p>
+                            <div className="mt-6 w-full max-w-xs mx-auto bg-gray-200 h-2 rounded-full overflow-hidden">
+                                <div className="h-full bg-teal-500 animate-loading-bar"></div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )
         }
         
+        const currentQData = currentActivity.questions?.[currentQuestionIndex] || currentActivity;
+
         switch(currentActivity.type) {
             case 'mcq':
-                const currentMcqQuestion = currentActivity.questions?.[currentIndex] || currentActivity;
                 return (
                     <div className="w-full animate-fade-in">
-                        {totalQuestions > 1 && (<div className="mb-4 text-center"><span className="inline-block bg-teal-600 text-white px-4 py-2 rounded-full font-semibold shadow-md text-sm sm:text-base">Question {currentIndex + 1} of {totalQuestions}</span></div>)}
-                        <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4">{currentMcqQuestion.question}</h2>
-                        {currentMcqQuestion.image && <img src={currentMcqQuestion.image} alt="activity" className="rounded-lg mb-4 max-h-48 sm:max-h-64 w-auto mx-auto"/>}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-                            {(currentMcqQuestion.options || []).map((opt, i) => (
-                                <button key={i} onClick={() => handleSubmit(opt.text)} className="p-3 sm:p-4 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition transform hover:scale-105 text-sm sm:text-base">{opt.text}</button>
+                        {isPlaylistMode && <span className="block text-xs text-gray-400 mb-2 uppercase tracking-wide">Activity {playlistIndex + 1} / {sessionData.currentActivity.queue.length}</span>}
+                        {totalQuestions > 1 && <span className="inline-block bg-teal-100 text-teal-800 px-3 py-1 rounded-full text-sm font-bold mb-4">Question {currentQuestionIndex + 1} / {totalQuestions}</span>}
+                        <h2 className="text-2xl font-bold text-gray-800 mb-6">{currentQData.question}</h2>
+                        {currentQData.image && <img src={currentQData.image} alt="activity" className="rounded-lg mb-6 max-h-64 w-auto mx-auto shadow-md"/>}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {(currentQData.options || []).map((opt, i) => (
+                                <button key={i} onClick={() => handleSubmit(opt.text)} className="p-4 bg-white border-2 border-gray-200 text-gray-700 font-bold rounded-xl shadow-sm hover:border-teal-500 hover:bg-teal-50 hover:shadow-md transition-all transform hover:-translate-y-1 text-lg text-left">
+                                    <span className="inline-block w-8 h-8 bg-gray-100 rounded-full text-center leading-8 mr-3 text-sm text-gray-500">{String.fromCharCode(65+i)}</span>
+                                    {opt.text}
+                                </button>
                             ))}
                         </div>
                     </div>
@@ -293,11 +301,12 @@ const StudentView = ({ setView, initialJoinCode }) => {
             case 'feedback':
                  return (
                     <div className="w-full animate-fade-in">
-                        <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4">{currentActivity.question}</h2>
-                        {currentActivity.image && <img src={currentActivity.image} alt="activity" className="rounded-lg mb-4 max-h-48 sm:max-h-64 w-auto mx-auto"/>}
+                        {isPlaylistMode && <span className="block text-xs text-gray-400 mb-2 uppercase tracking-wide">Activity {playlistIndex + 1} / {sessionData.currentActivity.queue.length}</span>}
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">{currentActivity.question}</h2>
+                        {currentActivity.image && <img src={currentActivity.image} alt="activity" className="rounded-lg mb-4 max-h-64 w-auto mx-auto"/>}
                         <form onSubmit={(e) => {e.preventDefault(); handleSubmit(feedbackText)}}>
-                            <textarea className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 transition" rows="4" placeholder="Type here..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)}></textarea>
-                            <button type="submit" className="w-full mt-4 bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700 transition shadow-md">Submit</button>
+                            <textarea className="w-full p-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition text-lg" rows="4" placeholder="Type your answer here..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)}></textarea>
+                            <button type="submit" className="w-full mt-4 bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 transition shadow-lg transform active:scale-95">Submit Answer</button>
                         </form>
                     </div>
                 );
@@ -305,23 +314,25 @@ const StudentView = ({ setView, initialJoinCode }) => {
                  const reviewOptions = currentActivity.settings.reviewStyle === 'emoji' ? ['😠', '🙁', '😐', '🙂', '😄'] : ['⭐️', '⭐️⭐️', '⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️⭐️'];
                 return (
                     <div className="w-full animate-fade-in text-center">
-                         <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">{currentActivity.question}</h2>
-                         <div className="flex justify-center gap-2 sm:gap-4 flex-wrap">
-                             {reviewOptions.map((opt, i) => (<button key={i} onClick={() => handleSubmit(opt)} className="text-3xl sm:text-5xl p-2 rounded-full hover:bg-gray-200 transition-colors transform hover:scale-110">{opt}</button>))}
+                         {isPlaylistMode && <span className="block text-xs text-gray-400 mb-2 uppercase tracking-wide">Activity {playlistIndex + 1} / {sessionData.currentActivity.queue.length}</span>}
+                         <h2 className="text-2xl font-bold text-gray-800 mb-8">{currentActivity.question}</h2>
+                         <div className="flex justify-center gap-4 flex-wrap">
+                             {reviewOptions.map((opt, i) => (<button key={i} onClick={() => handleSubmit(opt)} className="text-5xl p-4 rounded-2xl hover:bg-gray-100 transition-all transform hover:scale-125 duration-200">{opt}</button>))}
                          </div>
                     </div>
                 );
             case 'qa':
-                const currentQ = currentActivity.questions?.[0];
                 return (
                     <div className="w-full animate-fade-in">
                         <div className="mb-6">
-                            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4">{currentQ?.text}</h2>
-                            {timeLeft !== null && (<div className={`text-center mb-4 ${timeLeft <= 5 ? 'text-teal-600 animate-pulse' : 'text-gray-600'}`}><p className="text-lg font-bold">⏱️ {timeLeft}s</p></div>)}
+                            {isPlaylistMode && <span className="block text-xs text-gray-400 mb-2 uppercase tracking-wide">Activity {playlistIndex + 1} / {sessionData.currentActivity.queue.length}</span>}
+                            {totalQuestions > 1 && <span className="inline-block bg-teal-100 text-teal-800 px-3 py-1 rounded-full text-sm font-bold mb-4">Question {currentQuestionIndex + 1} / {totalQuestions}</span>}
+                            <h2 className="text-2xl font-bold text-gray-800 mb-2">{currentQData.text}</h2>
+                            {timeLeft !== null && <div className="inline-block bg-yellow-100 text-yellow-800 px-3 py-1 rounded-lg font-mono font-bold">⏱️ {timeLeft}s remaining</div>}
                         </div>
                         <form onSubmit={(e) => {e.preventDefault(); handleSubmit(feedbackText)}}>
-                            {currentQ?.type === 'short' ? (<input type="text" className="w-full p-3 border-2 border-gray-300 rounded-lg" placeholder="Type answer..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} />) : currentQ?.type === 'long' ? (<textarea className="w-full p-3 border-2 border-gray-300 rounded-lg" rows="6" placeholder="Type answer..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)}></textarea>) : (<div className="space-y-2">{(currentQ?.options || []).map((opt, idx) => (<button key={idx} type="button" onClick={() => handleSubmit(opt)} className="w-full p-3 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700">{opt}</button>))}</div>)}
-                            {currentQ?.type !== 'multiple' && <button type="submit" className="w-full mt-4 bg-teal-600 text-white font-bold py-3 rounded-lg">Submit Answer</button>}
+                            {currentQData.type === 'short' ? (<input type="text" className="w-full p-4 border-2 border-gray-300 rounded-xl focus:border-teal-500 text-lg" placeholder="Type answer..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} />) : currentQData.type === 'long' ? (<textarea className="w-full p-4 border-2 border-gray-300 rounded-xl focus:border-teal-500 text-lg" rows="5" placeholder="Type answer..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)}></textarea>) : (<div className="space-y-3">{(currentQData.options || []).map((opt, idx) => (<button key={idx} type="button" onClick={() => handleSubmit(opt)} className="w-full p-4 bg-white border-2 border-gray-200 text-gray-800 font-bold rounded-xl hover:bg-teal-50 hover:border-teal-500 text-left transition">{opt}</button>))}</div>)}
+                            {currentQData.type !== 'multiple' && <button type="submit" className="w-full mt-6 bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 shadow-lg">Submit Answer</button>}
                         </form>
                     </div>
                 );
@@ -331,99 +342,49 @@ const StudentView = ({ setView, initialJoinCode }) => {
                         word={currentActivity.wordleAnswer?.toUpperCase() || ''} 
                         roomCode={enteredCode} 
                         studentId={studentName}
-                        onGameEnd={(winningWord) => {
-                            triggerConfetti(); 
-                            if (!submitted) { handleSubmit(winningWord); }
-                        }}
+                        onGameEnd={(winningWord) => { triggerConfetti(); if (!submitted) { handleSubmit(winningWord); } }}
                     />
                 );
-            default: return <p>Unknown activity type</p>;
+            default: return <p>Waiting for activity...</p>;
         }
     }
 
     if (!joined) {
         return (
-             <div className="min-h-screen bg-gradient-to-br from-gray-900 via-red-950 to-black flex flex-col items-center justify-center p-4">
-                <div className="w-full max-w-sm bg-white/95 backdrop-blur rounded-lg shadow-2xl p-6 sm:p-8 border-t-4 border-red-600">
-                    <h1 className="text-2xl sm:text-3xl font-bold text-center text-gray-800 mb-2">Join Session</h1>
-                    <p className="text-center text-gray-600 mb-6 text-sm sm:text-base">Enter your name and the session code.</p>
-                    <form onSubmit={handleJoin} className="bg-white shadow-lg rounded-lg p-4 sm:p-8">
-                        <div className="mb-4"><label className="block text-gray-700 font-semibold mb-2">Name *</label><input type="text" value={studentName} onChange={e => setStudentName(e.target.value)} placeholder="Enter your name" className="w-full p-3 sm:p-4 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500" /></div>
-                        <div className="mb-4">
-                            <label className="block text-gray-700 font-semibold mb-2">Room Code *</label>
-                            <div className="flex gap-2 items-center">
-                                {/* Pre-filled and Read-Only if initialJoinCode exists */}
-                                <input 
-                                    type="text" 
-                                    maxLength="6" 
-                                    value={enteredCode} 
-                                    onChange={e => setEnteredCode(e.target.value.trim().toUpperCase())} 
-                                    placeholder="AANANN" 
-                                    className={`flex-1 p-3 sm:p-4 text-center text-2xl tracking-widest border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 ${initialJoinCode ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
-                                    readOnly={!!initialJoinCode} 
-                                />
-                                {/* Hide Copy Button if pre-filled */}
-                                {!initialJoinCode && (
-                                    <button type="button" onClick={handleCopyCode} disabled={!enteredCode} className="p-3 sm:p-4 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">📋</button>
-                                )}
-                            </div>
-                        </div>
-                        {codeCopied && <p className="text-green-600 text-center mt-2 text-sm font-semibold">✓ Code copied!</p>}
-                        {error && <p className="text-teal-500 text-center mt-4 text-sm">{error}</p>}
-                        <button type="submit" className="w-full mt-6 bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700 transition shadow-md">Join</button>
+             <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-black flex flex-col items-center justify-center p-4">
+                <div className="w-full max-w-md bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border-t-8 border-purple-500">
+                    <h1 className="text-3xl font-extrabold text-center text-gray-800 mb-2">Student Join</h1>
+                    <p className="text-center text-gray-500 mb-6">Pick your hero and enter the arena!</p>
+                    <form onSubmit={handleJoin} className="space-y-5">
+                        <div><label className="block text-gray-700 font-bold mb-2">Choose Avatar</label><div className="grid grid-cols-6 gap-2 bg-gray-50 p-3 rounded-xl border border-gray-200">{AVATARS.map((av) => (<button key={av} type="button" onClick={() => setSelectedAvatar(av)} className={`text-2xl p-2 rounded-lg transition transform hover:scale-110 ${selectedAvatar === av ? 'bg-purple-100 ring-2 ring-purple-500 scale-110' : 'hover:bg-gray-200'}`}>{av}</button>))}</div></div>
+                        <div><label className="block text-gray-700 font-bold mb-1">Name</label><input type="text" value={studentName} onChange={e => setStudentName(e.target.value)} placeholder="Your Name" className="w-full p-4 border-2 border-gray-300 rounded-xl focus:border-purple-500 focus:outline-none transition" /></div>
+                        <div><label className="block text-gray-700 font-bold mb-1">Room Code</label><input type="text" maxLength="6" value={enteredCode} onChange={e => setEnteredCode(e.target.value.trim().toUpperCase())} placeholder="AAAA00" className={`w-full p-4 text-center text-2xl tracking-widest border-2 border-gray-300 rounded-xl focus:border-purple-500 focus:outline-none font-mono uppercase ${initialJoinCode ? 'bg-gray-100 text-gray-500' : ''}`} readOnly={!!initialJoinCode} /></div>
+                        {error && <p className="text-red-500 text-center font-bold">{error}</p>}
+                        <button type="submit" className="w-full bg-purple-600 text-white font-bold py-4 rounded-xl hover:bg-purple-700 transition shadow-lg transform active:scale-95 text-lg">Ready to Play! 🚀</button>
                     </form>
-                     <button onClick={() => setView('home')} className="mt-6 text-gray-600 hover:text-teal-600 transition text-sm">Back to Home</button>
+                     <button onClick={() => setView('home')} className="mt-6 w-full text-gray-400 hover:text-purple-600 transition text-sm">Back to Home</button>
                 </div>
             </div>
         )
     }
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen font-sans text-gray-100 overflow-hidden relative transition-colors duration-1000">
-            {/* Background Layer */}
-            <div className="absolute inset-0 z-0 transition-all duration-1000"
-                style={sessionData.isGamified ? {
-                    backgroundColor: '#0a0a12', 
-                    backgroundImage: `radial-gradient(800px circle at ${mousePos.x}px ${mousePos.y}px, rgba(192, 38, 211, 0.15), rgba(56, 189, 248, 0.10) 40%, transparent 80%), url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.08'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
-                } : {
-                    background: 'linear-gradient(to bottom right, #111827, #7f1d1d, #000000)'
-                }}
-            ></div>
-
+        <div className="flex flex-col items-center min-h-screen font-sans text-gray-100 overflow-hidden relative transition-colors duration-1000">
+            <div className="absolute inset-0 z-0 transition-all duration-1000" style={sessionData.isGamified ? { backgroundColor: '#0f172a', backgroundImage: `radial-gradient(800px circle at ${mousePos.x}px ${mousePos.y}px, rgba(139, 92, 246, 0.15), rgba(59, 130, 246, 0.10) 40%, transparent 80%), url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` } : { background: 'linear-gradient(to bottom right, #1e293b, #991b1b, #000000)' }}></div>
             {showConfetti && <Confetti />}
-
-            {/* XP Bar - Responsive Width */}
-            <div className="fixed top-4 sm:top-6 left-1/2 transform -translate-x-1/2 w-[95%] sm:w-[90%] max-w-md z-50">
-                <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-xl p-2 flex items-center gap-3 border-b-4 border-teal-600 animate-slide-down">
-                    <div className="relative shrink-0">
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-teal-600 flex items-center justify-center text-white font-bold text-lg sm:text-xl shadow-lg ring-2 ring-teal-100">{getLevelInfo(myScore).level}</div>
-                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-yellow-400 text-[9px] sm:text-[10px] font-black px-1.5 rounded-sm text-gray-900 tracking-tighter">LVL</div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <div className="flex justify-between text-xs font-bold text-gray-600 mb-1 px-1"><span>{myScore} XP</span><span className="text-teal-600">Next: {(getLevelInfo(myScore).level) * 100}</span></div>
-                        <div className="w-full bg-gray-200 rounded-full h-2.5 sm:h-3 overflow-hidden shadow-inner"><div className="bg-gradient-to-r from-teal-400 to-teal-600 h-full rounded-full transition-all duration-1000 ease-out relative" style={{ width: `${getLevelInfo(myScore).progress}%` }}><div className="absolute inset-0 bg-white/20 animate-pulse"></div></div></div>
-                    </div>
-                    {myBadges.length > 0 && (<div className="hidden sm:flex animate-bounce-slight text-xl sm:text-2xl" title="Latest Badge">{myBadges[myBadges.length - 1]}</div>)}
+            <div className="fixed top-0 left-0 right-0 z-50 p-2 sm:p-4 flex justify-center pointer-events-none">
+                <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl p-3 flex items-center gap-4 border-b-4 border-indigo-500 w-full max-w-lg pointer-events-auto transform transition-all hover:scale-105">
+                    <div className="relative shrink-0"><div className="w-14 h-14 bg-indigo-100 rounded-xl flex items-center justify-center text-3xl shadow-inner border border-indigo-200">{selectedAvatar}</div><div className="absolute -bottom-2 -right-2 bg-yellow-400 text-yellow-900 text-xs font-black px-1.5 py-0.5 rounded-md shadow-sm border border-yellow-200">{getLevelInfo(myScore).level}</div></div>
+                    <div className="flex-1 min-w-0"><div className="flex justify-between items-end mb-1"><h3 className="font-bold text-gray-800 truncate">{studentName}</h3><span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{getRankTitle(myScore)}</span></div><div className="relative w-full bg-gray-200 rounded-full h-3 overflow-hidden shadow-inner"><div className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-400 to-purple-600 transition-all duration-1000 ease-out" style={{ width: `${getLevelInfo(myScore).progress}%` }}><div className="absolute inset-0 bg-white/30 animate-pulse"></div></div></div><div className="flex justify-between text-[10px] font-bold text-gray-400 mt-1"><span>{myScore} XP</span><span>Next: {getLevelInfo(myScore).level * 100}</span></div></div>
+                    {myBadges.length > 0 && (<div className="hidden sm:flex flex-col items-center justify-center pl-2 border-l border-gray-200"><div className="text-2xl animate-bounce-slight">{myBadges[myBadges.length - 1]}</div></div>)}
                 </div>
             </div>
-
-            {/* Exit Button - Mobile Safe */}
-            <button onClick={() => setView('home')} className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-full shadow-lg transition-all duration-200 flex items-center gap-2 z-50 hover:scale-105">
-                <span className="text-lg sm:text-xl">✕</span><span className="hidden sm:inline">Exit</span>
-            </button>
-
-            {/* Content Wrapper - Mobile Padding */}
-            <div className="relative z-10 w-full max-w-2xl p-4 mt-12 sm:mt-0">
+            <button onClick={() => setView('home')} className="fixed bottom-4 right-4 bg-red-500/80 hover:bg-red-600 text-white p-3 rounded-full shadow-lg backdrop-blur-sm transition z-50">🚪</button>
+            <div className="relative z-10 w-full max-w-3xl p-4 mt-24 pb-20">
                 {!sessionData.isSessionLive ? (
-                    <div className="animate-fade-in text-center">
-                        <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">You're in!</h2>
-                        <p className="mt-2 text-gray-300 text-sm sm:text-base">Waiting for the teacher to start...</p>
-                        <div className="mt-8"><div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-t-4 border-b-4 border-red-600 mx-auto shadow-[0_0_15px_rgba(220,38,38,0.6)]"></div></div>
-                    </div>
+                    <div className="animate-fade-in text-center mt-20"><div className="text-6xl mb-4 animate-bounce">{selectedAvatar}</div><h2 className="text-3xl font-bold text-white mb-2">You're in, {studentName}!</h2><p className="text-indigo-200 text-lg">Waiting for the teacher to start...</p><div className="mt-8 flex justify-center gap-2"><div className="w-3 h-3 bg-white rounded-full animate-bounce delay-0"></div><div className="w-3 h-3 bg-white rounded-full animate-bounce delay-150"></div><div className="w-3 h-3 bg-white rounded-full animate-bounce delay-300"></div></div></div>
                 ) : (
-                    <div className="w-full bg-white/95 backdrop-blur p-4 sm:p-8 rounded-lg shadow-2xl border border-gray-200 text-left text-black">
-                        {renderActivity()}
-                    </div>
+                    <div className="bg-white/95 backdrop-blur-md p-6 sm:p-8 rounded-3xl shadow-2xl border border-white/20 text-left text-black transform transition-all duration-500">{renderActivity()}</div>
                 )}
             </div>
         </div>
