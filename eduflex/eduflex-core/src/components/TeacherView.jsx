@@ -5,7 +5,7 @@ import { playSound } from '../utils/helpers';
 import { generatePDF, generateCombinedPDF } from '../utils/pdfGenerator';
 import { generateSessionReport } from '../utils/sessionUtils';
 import { McqCreator, WordCloudCreator, ReviewsCreator, FeedbackCreator, QaCreator, WordleCreator, ShortFeedbackCreator } from './activities/ActivityCreators';
-import { IconUsers, IconChevronLeft, IconListCheck, IconCloud, IconSmile, IconMessageSquare, IconHelpCircle, IconLink, IconCopy, IconPlus } from './Icons';
+import { IconUsers, IconChevronLeft, IconListCheck, IconCloud, IconSmile, IconMessageSquare, IconHelpCircle, IconLink, IconCopy, IconPlus, IconTrash } from './Icons';
 
 const TeacherView = ({ setView, roomCode }) => {
     // --- CONSTANTS ---
@@ -25,6 +25,7 @@ const TeacherView = ({ setView, roomCode }) => {
     const [sessionPassword, setSessionPassword] = useState('');
     const [showSecret, setShowSecret] = useState(false);
     
+    // PLAYLIST STATE
     const [playlist, setPlaylist] = useState([]); 
 
     // Helpers
@@ -38,7 +39,7 @@ const TeacherView = ({ setView, roomCode }) => {
     };
 
     const [liveActivity, setLiveActivity] = useState(null);
-    const [wordleStats, setWordleStats] = useState({ total: 0, attempting: 0, correct: 0, failed: 0 });
+    const [wordleStats, setWordleStats] = useState({ total: 0, attempting: 0, won: 0, lost: 0 });
     const [showParticipants, setShowParticipants] = useState(false);
     const [showResults, setShowResults] = useState(false);
     const [showShareLink, setShowShareLink] = useState(false);
@@ -59,8 +60,7 @@ const TeacherView = ({ setView, roomCode }) => {
     const [isMusicPlaying, setIsMusicPlaying] = useState(false);
     const bgMusicRef = useRef(new Audio('/game-music.mp3'));
     
-    // ✅ FIXED: Added missing ref for speed bonus calculation
-    const sessionStartTimeRef = useRef(null); 
+    const sessionStartTimeRef = useRef(null);
 
     // --- EFFECTS ---
     useEffect(() => {
@@ -75,7 +75,7 @@ const TeacherView = ({ setView, roomCode }) => {
     // Audio Logic
     useEffect(() => {
         const music = bgMusicRef.current;
-        music.src = musicSrc; // Allow dynamic source update
+        music.src = musicSrc; 
         music.loop = true;
         music.volume = 0.3; 
         
@@ -99,11 +99,9 @@ const TeacherView = ({ setView, roomCode }) => {
             setIsMusicPlaying(false);
         }
         updateGamificationState();
-        
         return () => { music.pause(); };
     }, [enableGamification, roomCode, musicSrc]);
 
-    // Upload Music Handler
     const handleMusicUpload = (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -155,7 +153,9 @@ const TeacherView = ({ setView, roomCode }) => {
                     if (data.sessionTopic) setSessionTopic(data.sessionTopic);
                     if (data.isSessionLive !== undefined) setIsSessionLive(data.isSessionLive);
                     if (data.isGamified !== undefined) setEnableGamification(data.isGamified);
-                    if (data.currentActivity) setLiveActivity(data.currentActivity);
+                    if (data.currentActivity) {
+                        setLiveActivity(data.currentActivity);
+                    }
                 }
             } catch (error) { console.error("Error loading session:", error); }
         };
@@ -166,7 +166,7 @@ const TeacherView = ({ setView, roomCode }) => {
         return () => unsub();
     }, [roomCode]);
 
-    // Wordle Stats Listener
+    // Global Wordle Stats Listener
     useEffect(() => {
       if (!roomCode) return;
       const unsubscribe = onSnapshot(query(collection(db, "sessions", roomCode, "wordleProgress")), (querySnapshot) => {
@@ -183,7 +183,7 @@ const TeacherView = ({ setView, roomCode }) => {
       return () => unsubscribe();
     }, [roomCode]);
 
-    // --- LOGIC ---
+    // --- LOGIC: Define Display Activity Globally ---
     const displayActivity = isSessionLive && liveActivity ? liveActivity : activity;
 
     const liveResults = useMemo(() => {
@@ -193,13 +193,15 @@ const TeacherView = ({ setView, roomCode }) => {
         
         if (!displayActivity) return { total: 0, responses: [] };
         
+        // STRICT FILTER: Match Type AND ID
         const relevantResponses = liveResponses.filter(r => {
             if (r.type !== displayActivity.type) return false;
+            // Match specific ID to prevent ghost data from playlist items leaking into main view
             if (displayActivity.activityId && r.activityId && r.activityId !== displayActivity.activityId && r.activityId !== 'single') return false;
             return true;
         });
 
-        // Filter out empty answers
+        // Filter Ghost Data
         const validResponses = relevantResponses.filter(r => r.answer && r.answer.trim() !== "");
         const total = validResponses.length;
 
@@ -226,6 +228,7 @@ const TeacherView = ({ setView, roomCode }) => {
         
         let targetActivity = currentLiveActivity;
         
+        // Playlist Drill-Down Logic
         if (currentLiveActivity.type === 'playlist' && currentLiveActivity.queue) {
             targetActivity = currentLiveActivity.queue.find(item => item.playlistId === response.activityId) || currentLiveActivity.queue[0];
         }
@@ -243,7 +246,6 @@ const TeacherView = ({ setView, roomCode }) => {
             
             if (correctOption && response.answer.trim().toLowerCase() === correctOption.text.trim().toLowerCase()) {
                 points += 20; badges.push("✅");
-                // Use ref to calculate speed bonus
                 if ((Date.now() - activityStartTime) / 1000 <= 3) { points += 15; badges.push("⚡"); }
             }
         }
@@ -266,7 +268,6 @@ const TeacherView = ({ setView, roomCode }) => {
             const unscoredResponses = liveResponses.filter(r => !r.pointsAwarded);
             if (unscoredResponses.length === 0) return;
             
-            // Use the Ref value here
             const activityStartTime = sessionStartTimeRef.current || (Date.now() - 10000); 
             const sortedResponses = [...liveResponses].sort((a,b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
             const firstResponderId = sortedResponses[0]?.studentName;
@@ -288,6 +289,7 @@ const TeacherView = ({ setView, roomCode }) => {
 
 
     // --- ACTIONS ---
+    // ✅ FIX: Defined delete handler to prevent crash
     const handleDeleteResponse = async (responseId) => {
         if(!window.confirm("Delete this response?")) return;
         try { await deleteDoc(doc(db, 'sessions', roomCode, 'responses', responseId)); } 
@@ -319,7 +321,7 @@ const TeacherView = ({ setView, roomCode }) => {
     };
 
     const launchSession = async (payload) => {
-        sessionStartTimeRef.current = Date.now(); // Update Ref on Launch
+        sessionStartTimeRef.current = Date.now();
         const q = query(collection(db, 'sessions', roomCode, 'responses'));
         const querySnapshot = await getDocs(q);
         const deletePromises = querySnapshot.docs.map(d => deleteDoc(d.ref));
@@ -358,7 +360,12 @@ const TeacherView = ({ setView, roomCode }) => {
 
     // --- RENDER HELPERS ---
     const renderCreator = () => {
-        const props = { activity, setActivity, liveResults: liveResults, onDelete: handleDeleteResponse };
+        // ✅ FIX: Only pass liveResults if types match, to prevent Ghost Data
+        const matchingResults = (isSessionLive && liveActivity && liveActivity.type === currentActivityType && liveActivity.type !== 'playlist') ? liveResults : null;
+        
+        // ✅ FIX: Pass the delete handler down
+        const props = { activity, setActivity, liveResults: matchingResults, onDelete: handleDeleteResponse };
+        
         switch (currentActivityType) {
             case 'mcq': return <McqCreator {...props} />;
             case 'wordcloud': return <WordCloudCreator {...props} />;
@@ -370,134 +377,297 @@ const TeacherView = ({ setView, roomCode }) => {
         }
     };
 
+    // --- NEW: PLAYLIST MONITORING COMPONENT ---
     const renderPlaylistMonitor = () => {
         if (!liveActivity || liveActivity.type !== 'playlist') return null;
+
         return (
             <div className="space-y-6 animate-fade-in">
-                <div className="bg-gray-900/90 border-l-4 border-purple-500 p-6 rounded-r-lg shadow-2xl">
-                    <h3 className="text-2xl font-bold text-white mb-2">🎶 Playlist Live Dashboard</h3>
-                    <p className="text-purple-300 text-sm">Students are completing these activities at their own pace.</p>
+                <div className="glass-card bg-gradient-to-r from-blue-900/60 to-purple-900/60 border border-white/10 p-6 rounded-2xl shadow-xl flex justify-between items-center relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/20 blur-3xl rounded-full -mr-16 -mt-16 pointer-events-none"></div>
+                    <div>
+                        <h3 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
+                            <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></span> 
+                            Playlist Live Monitor
+                        </h3>
+                        <p className="text-gray-300 font-medium">Students are progressing through {liveActivity.queue.length} activities.</p>
+                    </div>
+                    <div className="text-right z-10">
+                        <div className="text-4xl font-black text-white">{liveResponses.length}</div>
+                        <div className="text-xs uppercase font-bold text-blue-300 tracking-wider">Total Interactions</div>
+                    </div>
                 </div>
-                {liveActivity.queue.map((item, idx) => {
-                    const itemResponses = liveResponses.filter(r => r.activityId === item.playlistId && r.type === item.type && r.answer && r.answer.trim() !== "");
-                    
-                    return (
-                        <div key={idx} className="bg-white/95 backdrop-blur rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                            <div className="bg-gray-100 p-4 flex justify-between items-center border-b border-gray-200">
-                                <div><span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{item.type}</span><h4 className="text-lg font-bold text-gray-800">{item.question || `Activity #${idx+1}`}</h4></div>
-                                <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-bold">{itemResponses.length} Responses</span>
-                            </div>
-                            <div className="p-4">
-                                {item.type === 'wordcloud' && (<div className="flex flex-wrap gap-2">{itemResponses.map((r, i) => (<span key={i} className="px-2 py-1 bg-teal-50 text-teal-700 rounded text-sm">{r.answer}</span>))}</div>)}
-                                {item.type === 'mcq' && (
-                                    <div className="space-y-2">{(item.questions?.[0]?.options || []).map((opt, i) => {
-                                        const count = itemResponses.filter(r => r.answer === opt.text).length;
-                                        const percent = itemResponses.length ? (count / itemResponses.length) * 100 : 0;
-                                        return (<div key={i} className="flex items-center gap-2 text-sm"><div className="w-32 truncate font-medium text-gray-600">{opt.text}</div><div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden"><div className="bg-teal-500 h-full" style={{width: `${percent}%`}}></div></div><div className="w-8 text-right font-bold text-gray-700">{count}</div></div>)
-                                    })}</div>
-                                )}
-                                {item.type === 'wordle' && (
-                                    <div className="flex justify-around text-center py-2 bg-gray-50 rounded-lg">
-                                        <div><span className="block text-xl font-bold text-green-600">{wordleStats.won}</span><span className="text-xs text-gray-500">WON</span></div>
-                                        <div><span className="block text-xl font-bold text-yellow-600">{wordleStats.attempting}</span><span className="text-xs text-gray-500">TRYING</span></div>
-                                        <div><span className="block text-xl font-bold text-red-600">{wordleStats.lost}</span><span className="text-xs text-gray-500">LOST</span></div>
-                                        <div><span className="block text-xl font-bold text-gray-800">{wordleStats.total}</span><span className="text-xs text-gray-500">TOTAL</span></div>
+
+                <div className="grid grid-cols-1 gap-6">
+                    {liveActivity.queue.map((item, idx) => {
+                        // Strict filter for playlist items
+                        const itemResponses = liveResponses.filter(r => r.activityId === item.playlistId && r.type === item.type && r.answer && r.answer.trim() !== "");
+                        
+                        return (
+                            <div key={idx} className="glass-card bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all duration-300 group">
+                                <div className="bg-white/5 p-4 flex justify-between items-center border-b border-white/10">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-blue-600/20 text-blue-400 p-2 rounded-lg font-bold text-xs uppercase tracking-widest">{item.type}</div>
+                                        <h4 className="text-lg font-bold text-white group-hover:text-blue-300 transition">{item.question || item.questions?.[0]?.question || `Activity #${idx+1}`}</h4>
                                     </div>
-                                )}
-                                {(item.type === 'feedback' || item.type === 'qa') && (<div className="max-h-32 overflow-y-auto space-y-1">{itemResponses.map((r, i) => (<div key={i} className="text-sm text-gray-700 border-b border-gray-100 py-1 flex justify-between"><span>{r.answer}</span> <button onClick={() => handleDeleteResponse(r.id)} className="text-red-500 hover:text-red-700 text-xs">x</button></div>))}</div>)}
+                                    <span className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs font-bold border border-green-500/30 shadow-sm">{itemResponses.length} Responses</span>
+                                </div>
+
+                                <div className="p-5 max-h-64 overflow-y-auto custom-scrollbar">
+                                    {item.type === 'wordcloud' && (
+                                        <div className="flex flex-wrap gap-2">
+                                            {itemResponses.map((r, i) => (
+                                                <span key={i} className="px-3 py-1.5 bg-white/10 text-white rounded-lg text-sm border border-white/5 hover:bg-white/20 transition">{r.answer}</span>
+                                            ))}
+                                            {itemResponses.length === 0 && <span className="text-gray-500 italic">Waiting for words...</span>}
+                                        </div>
+                                    )}
+
+                                    {item.type === 'mcq' && (
+                                        <div className="space-y-3">
+                                            {(item.questions?.[0]?.options || []).map((opt, i) => {
+                                                const count = itemResponses.filter(r => r.answer === opt.text).length;
+                                                const percent = itemResponses.length ? (count / itemResponses.length) * 100 : 0;
+                                                return (
+                                                    <div key={i} className="flex items-center gap-3 text-sm">
+                                                        <div className="w-40 truncate font-medium text-gray-300">{opt.text}</div>
+                                                        <div className="flex-1 bg-white/10 rounded-full h-3 overflow-hidden">
+                                                            <div className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-1000" style={{width: `${percent}%`}}></div>
+                                                        </div>
+                                                        <div className="w-8 text-right font-bold text-white">{count}</div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {item.type === 'wordle' && (
+                                        <div className="grid grid-cols-4 gap-4 text-center py-2">
+                                            <div className="bg-green-500/20 rounded-lg p-2 border border-green-500/30">
+                                                <span className="block text-2xl font-bold text-green-400">{wordleStats.won}</span>
+                                                <span className="text-[10px] uppercase font-bold text-green-300/70">Won</span>
+                                            </div>
+                                            <div className="bg-yellow-500/20 rounded-lg p-2 border border-yellow-500/30">
+                                                <span className="block text-2xl font-bold text-yellow-400">{wordleStats.attempting}</span>
+                                                <span className="text-[10px] uppercase font-bold text-yellow-300/70">Trying</span>
+                                            </div>
+                                            <div className="bg-red-500/20 rounded-lg p-2 border border-red-500/30">
+                                                <span className="block text-2xl font-bold text-red-400">{wordleStats.lost}</span>
+                                                <span className="text-[10px] uppercase font-bold text-red-300/70">Lost</span>
+                                            </div>
+                                            <div className="bg-white/10 rounded-lg p-2 border border-white/20">
+                                                <span className="block text-2xl font-bold text-white">{wordleStats.total}</span>
+                                                <span className="text-[10px] uppercase font-bold text-gray-400">Total</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {(item.type === 'feedback' || item.type === 'qa') && (
+                                        <div className="space-y-2">
+                                            {itemResponses.map((r, i) => (
+                                                <div key={i} className="flex justify-between items-start bg-white/5 p-2 rounded border border-white/5">
+                                                    <span className="text-sm text-gray-300">{r.answer}</span>
+                                                    <button onClick={() => handleDeleteResponse(r.id)} className="text-red-400 hover:text-red-300 p-1 opacity-50 hover:opacity-100 transition"><IconTrash /></button>
+                                                </div>
+                                            ))}
+                                            {itemResponses.length === 0 && <span className="text-gray-500 italic">No responses yet.</span>}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
         );
     };
 
     return (
         <div className="flex h-screen font-sans text-gray-100 overflow-hidden relative transition-colors duration-1000">
-            <div className="absolute inset-0 z-0 transition-all duration-1000" style={enableGamification ? { backgroundColor: '#000000', backgroundImage: `radial-gradient(circle at 15% 20%, rgba(168, 85, 247, 0.25), transparent 40%), radial-gradient(circle at 85% 80%, rgba(59, 130, 246, 0.25), transparent 40%), linear-gradient(135deg, #2e1065 0%, #172554 50%, #020617 100%)` } : { background: 'linear-gradient(to bottom right, #111827, #7f1d1d, #000000)' }}></div>
+            {/* Background Animation */}
+            <div className="absolute inset-0 z-0 bg-animated transition-all duration-1000" style={enableGamification ? { backgroundColor: '#000000', backgroundImage: `radial-gradient(circle at 15% 20%, rgba(168, 85, 247, 0.25), transparent 40%), radial-gradient(circle at 85% 80%, rgba(59, 130, 246, 0.25), transparent 40%), linear-gradient(135deg, #2e1065 0%, #172554 50%, #020617 100%)` } : { background: 'linear-gradient(to bottom right, #111827, #7f1d1d, #000000)' }}></div>
 
-            <aside className={`relative z-10 bg-black/40 backdrop-blur-md border-r ${enableGamification ? 'border-purple-500/30' : 'border-red-900/30'} flex flex-col transition-all duration-300 shadow-2xl ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
-                <div className="flex items-center justify-between p-4 border-b border-gray-700">
-                    <div className="flex items-center"><button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 rounded-lg hover:bg-gray-800 transition-colors mr-3"><IconChevronLeft /></button><button onClick={() => { if(window.confirm("Go back to Home?")) setView('home'); }} className="p-2 rounded-lg hover:bg-gray-800 transition-colors mr-2 text-gray-400 hover:text-white" title="Exit">🏠</button>{isSidebarOpen && <h1 className={`text-xl font-bold whitespace-nowrap tracking-wider ${enableGamification ? 'text-purple-400' : 'text-red-600'}`}>EDU<span className="text-white">FLEX</span></h1>}</div>
+            {/* Glass Sidebar */}
+            <aside className={`relative z-10 glass-panel border-r ${enableGamification ? 'border-purple-500/30' : 'border-red-900/30'} flex flex-col transition-all duration-300 shadow-2xl ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
+                <div className="flex items-center justify-between p-6 border-b border-white/10">
+                    <div className="flex items-center">
+                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 rounded-lg hover:bg-white/10 transition-colors mr-3 text-white"><IconChevronLeft /></button>
+                        <button onClick={() => { if(window.confirm("Go back to Home?")) setView('home'); }} className="p-2 rounded-lg hover:bg-white/10 transition-colors mr-2 text-gray-400 hover:text-white" title="Exit">🏠</button>
+                        {isSidebarOpen && <h1 className="text-xl font-bold whitespace-nowrap tracking-wider text-white">EDU<span className="text-blue-400">FLEX</span></h1>}
+                    </div>
                 </div>
-                <nav className="flex-1 px-2 py-4 space-y-2">
+                <nav className="flex-1 px-4 py-6 space-y-3 custom-scrollbar overflow-y-auto">
                     {[{ id: 'mcq', name: 'MCQ / Poll', icon: <IconListCheck /> }, { id: 'wordcloud', name: 'Word Cloud', icon: <IconCloud /> }, { id: 'reviews', name: 'Reviews', icon: <IconSmile /> }, { id: 'feedback', name: 'Short Feedback', icon: <IconMessageSquare /> }, { id: 'qa', name: 'Q&A Session', icon: <IconHelpCircle /> }, { id: 'wordle', name: 'Wordle Game', icon: <IconListCheck /> }, { id: 'analytics', name: 'Analytics', icon: <IconListCheck /> }].map(item => (
-                        <button key={item.id} onClick={() => item.id === "analytics" ? setShowAnalyticsModal(true) : setCurrentActivityType(item.id)} className={`w-full flex items-center p-3 rounded-lg transition-colors text-left ${isSidebarOpen ? '' : 'justify-center'} ${currentActivityType === item.id && item.id !== 'analytics' ? (enableGamification ? 'bg-purple-600 text-white shadow-[0_0_20px_rgba(168,85,247,0.6)]' : 'bg-red-700 text-white shadow-[0_0_15px_rgba(220,38,38,0.5)]') : 'hover:bg-gray-800 hover:text-white'}`}>
-                            {item.icon} {isSidebarOpen && <span className="whitespace-nowrap ml-2">{item.name}</span>}
+                        <button key={item.id} onClick={() => item.id === "analytics" ? setShowAnalyticsModal(true) : setCurrentActivityType(item.id)} className={`w-full flex items-center p-3 rounded-xl transition-all duration-200 text-left border ${currentActivityType === item.id && item.id !== 'analytics' ? 'bg-gradient-to-r from-blue-600/40 to-purple-600/40 border-blue-400/50 text-white shadow-lg shadow-blue-500/20' : 'border-transparent hover:bg-white/5 text-gray-400 hover:text-white'}`}>
+                            {item.icon} {isSidebarOpen && <span className="whitespace-nowrap ml-2 font-medium">{item.name}</span>}
                         </button>
                     ))}
                 </nav>
             </aside>
 
-            <main className="flex-1 flex flex-col overflow-y-auto relative z-10">
-                 <header className={`bg-black/20 backdrop-blur-md shadow-md p-4 border-b ${enableGamification ? 'border-purple-500/30' : 'border-red-900/30'} sticky top-0 z-20`}>
-                    <div className="flex justify-center mb-4"><input type="text" placeholder="Enter Session Topic..." className={`w-full max-w-md text-xl font-semibold text-white bg-transparent border-b-2 ${enableGamification ? 'border-purple-500 focus:border-purple-300' : 'border-red-600 focus:border-red-400'} outline-none p-2 transition placeholder-gray-500 text-center`} value={sessionTopic} onChange={e => setSessionTopic(e.target.value)} /></div>
+            {/* Main Content Area */}
+            <main className="flex-1 flex flex-col overflow-y-auto relative z-10 custom-scrollbar">
+                 {/* Glass Header */}
+                 <header className="glass-card m-4 rounded-2xl p-4 sticky top-4 z-20 flex flex-col md:flex-row gap-4 justify-between items-center">
+                    <div className="flex-1 w-full md:w-auto">
+                        <input type="text" placeholder="Enter Session Topic..." className="w-full bg-transparent border-b-2 border-white/20 focus:border-blue-500 text-xl font-bold text-white placeholder-gray-500 outline-none px-2 py-1 text-center md:text-left transition-colors" value={sessionTopic} onChange={e => setSessionTopic(e.target.value)} />
+                    </div>
+                    
                     <div className="flex flex-wrap items-center justify-center gap-3">
-                         <div className="text-center mr-4"><div className="flex flex-col items-center"><span className="text-xs text-gray-400 uppercase">Room Code</span><div className="flex items-center gap-2"><p className={`text-2xl font-bold tracking-widest drop-shadow-md ${enableGamification ? 'text-purple-400 animate-pulse' : 'text-red-600'}`}>{roomCode}</p><button onClick={handleCopyCode} className="p-1.5 bg-gray-800 rounded hover:bg-gray-700 text-xs text-white">{codeCopied ? '✓' : '📋'}</button></div><div className="mt-1 flex items-center gap-2 bg-gray-800/50 px-2 py-1 rounded border border-gray-700/50 cursor-pointer hover:bg-gray-700 transition" onClick={() => setShowSecret(!showSecret)} title="Password"><span className="text-[10px] text-gray-500 uppercase font-bold">Admin Pass:</span><span className={`text-sm font-mono tracking-widest ${showSecret ? 'text-white' : 'text-gray-400'}`}>{showSecret ? sessionPassword : '••••'}</span><span className="text-xs">{showSecret ? '👁️' : '🔒'}</span></div></div></div>
-                        
-                        {/* CUSTOM AUDIO CONTROLS */}
-                        <div className="flex items-center gap-2 bg-gray-800/50 px-2 py-1 rounded border border-gray-700/50">
-                            <label className="cursor-pointer text-lg hover:scale-110 transition" title="Upload Custom MP3">
+                        {/* Room Code Badge */}
+                         <div className="flex flex-col items-center bg-black/30 px-4 py-2 rounded-xl border border-white/10">
+                            <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Room Code</span>
+                            <div className="flex items-center gap-2">
+                                <p className="text-2xl font-black text-white tracking-widest font-mono">{roomCode}</p>
+                                <button onClick={handleCopyCode} className="text-white hover:text-blue-400 transition">{codeCopied ? '✓' : '📋'}</button>
+                            </div>
+                        </div>
+
+                        {/* Music Player */}
+                        <div className="flex items-center gap-2 bg-black/30 px-3 py-2 rounded-xl border border-white/10">
+                            <label className="cursor-pointer hover:scale-110 transition p-1 bg-white/10 rounded-full" title="Upload Custom MP3">
                                 📂 <input type="file" accept="audio/*" className="hidden" onChange={handleMusicUpload} />
                             </label>
-                            <button onClick={toggleMusic} className="text-white text-sm font-bold hover:text-teal-400 transition w-8 text-center">
+                            <button onClick={toggleMusic} className="w-8 h-8 flex items-center justify-center bg-gradient-to-r from-pink-500 to-purple-500 rounded-full text-white shadow-lg hover:scale-110 transition">
                                 {isMusicPlaying ? '⏸' : '▶'}
                             </button>
                         </div>
 
-                        <button onClick={() => setShowShareLink(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition"><IconLink /> Link</button>
-                        <button onClick={() => setShowParticipants(true)} className="flex items-center bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 border border-gray-700 transition"><IconUsers /> Users</button>
-                        <button onClick={() => {playSound('click'); setShowLeaderboard(true);}} className="flex items-center bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition shadow-lg">🏆 Leaderboard</button>
+                        <div className="h-8 w-[1px] bg-white/10 mx-2 hidden md:block"></div>
+
+                        <button onClick={() => setShowShareLink(true)} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg text-sm font-bold border border-white/10 transition"><IconLink /> Link</button>
+                        <button onClick={() => setShowParticipants(true)} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg text-sm font-bold border border-white/10 transition"><IconUsers /> Users</button>
+                        <button onClick={() => {playSound('click'); setShowLeaderboard(true);}} className="flex items-center gap-2 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg transition transform hover:-translate-y-0.5">🏆 Leaderboard</button>
                         
+                        {/* GAMIFY TOGGLE - VISIBLE */}
                         <label className={`flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-700 border transition ${enableGamification ? 'border-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'border-gray-700'}`}>
                             <input type="checkbox" checked={enableGamification} onChange={(e) => {setEnableGamification(e.target.checked); playSound(e.target.checked ? 'success' : 'click');}} className={`w-4 h-4 ${enableGamification ? 'accent-purple-500' : 'accent-red-600'}`} /><span>🎮 Gamify</span>
                         </label>
-                        
-                        <button onClick={handleCopyRecoveryLink} className="flex items-center gap-1 bg-yellow-600/90 hover:bg-yellow-700 px-3 py-2 rounded text-white text-xs uppercase font-bold tracking-wide transition shadow-lg border border-yellow-500/50">🔑 Recover</button>
-                        <button onClick={handleCloseRoom} className="bg-red-900/80 text-red-200 px-4 py-2 rounded-lg hover:bg-red-900 border border-red-800 transition ml-4" title="Close Room">🚪 Close</button>
+
+                        <button onClick={handleCloseRoom} className="bg-red-500/20 hover:bg-red-500/40 text-red-300 border border-red-500/30 px-4 py-2 rounded-lg transition font-bold text-sm">Close</button>
                     </div>
                 </header>
 
                 <div className="p-4 sm:p-6 lg:p-8 flex-1">
+                    {/* Playlist Queue */}
                     {playlist.length > 0 && !isSessionLive && (
-                        <div className="mb-6 p-4 bg-gray-800/60 rounded-xl border border-gray-600">
-                            <div className="flex justify-between items-center mb-3"><h3 className="text-lg font-bold text-white">📋 Activity Playlist ({playlist.length})</h3><button onClick={() => setPlaylist([])} className="text-red-400 text-sm hover:underline">Clear</button></div>
-                            <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">{playlist.map((item, idx) => (<div key={idx} className="flex-shrink-0 bg-gray-700 p-3 rounded-lg border border-gray-600 w-48"><div className="flex items-center gap-2 mb-1"><span className="text-xs font-bold uppercase text-teal-400">{item.type}</span><span className="text-xs text-gray-400">#{idx + 1}</span></div><p className="text-sm text-white truncate">{item.question || item.questions?.[0]?.question || "Activity"}</p></div>))}</div>
+                        <div className="mb-8 p-6 glass-card rounded-2xl animate-fade-in">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xl font-bold text-white flex items-center gap-2">📋 Activity Queue <span className="bg-blue-600 text-xs px-2 py-1 rounded-full">{playlist.length}</span></h3>
+                                <button onClick={() => setPlaylist([])} className="text-red-400 text-xs hover:text-red-300 font-bold uppercase tracking-wider transition">Clear Queue</button>
+                            </div>
+                            <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+                                {playlist.map((item, idx) => (
+                                    <div key={idx} className="flex-shrink-0 bg-white/5 p-4 rounded-xl border border-white/10 w-56 hover:bg-white/10 transition group relative">
+                                        <div className="absolute top-2 right-2 text-gray-600 font-black text-4xl opacity-20 select-none">#{idx + 1}</div>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-blue-300 bg-blue-900/30 px-2 py-1 rounded">{item.type}</span>
+                                        </div>
+                                        <p className="text-sm text-gray-300 font-medium line-clamp-2">{item.question || item.questions?.[0]?.question || "Untitled Activity"}</p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
 
-                    {isSessionLive && liveActivity && liveActivity.type === 'playlist' ? renderPlaylistMonitor() : (
+                    {/* LIVE MONITOR: PLAYLIST MODE */}
+                    {isSessionLive && liveActivity && liveActivity.type === 'playlist' ? (
+                        renderPlaylistMonitor()
+                    ) : (
+                        // STANDARD MODE: Ad-Hoc / Single
                         <>
                             {(!isSessionLive || (liveActivity && liveActivity.type !== 'playlist')) && renderCreator()}
+                            
+                            {/* Live Activity Banner */}
                             {isSessionLive && liveActivity && (
-                                <div className={`mt-6 p-4 rounded-lg border backdrop-blur-sm text-center animate-pulse ${enableGamification ? 'bg-purple-900/20 border-purple-500/30' : 'bg-red-900/20 border-red-500/30'}`}>
-                                    <h3 className={`font-bold text-lg ${enableGamification ? 'text-purple-400' : 'text-red-400'}`}>● Session is LIVE: {liveActivity.type.toUpperCase()}</h3>
-                                    <p className="text-sm text-gray-300 opacity-80">Students are currently responding to: "{liveActivity.question || liveActivity.questions?.[0]?.question}"</p>
+                                <div className="mt-8 glass-card bg-gradient-to-r from-green-900/40 to-teal-900/40 border border-green-500/30 p-6 rounded-2xl text-center animate-pulse shadow-[0_0_30px_rgba(16,185,129,0.15)]">
+                                    <h3 className="text-2xl font-black text-green-400 tracking-wide uppercase mb-1">● Live: {liveActivity.type.toUpperCase()}</h3>
+                                    <p className="text-green-200/70 font-medium">Students are currently responding...</p>
                                 </div>
                             )}
+                            
+                            {/* Wordle Live Stats (Ad-Hoc) */}
                             {currentActivityType === 'wordle' && (
-                                <div className="mt-6 p-4 rounded-lg border border-teal-500/30 bg-black/40">
-                                    <h4 className="text-lg font-bold mb-4 text-center text-teal-300">Wordle Live Stats</h4>
-                                    <div className="flex justify-around text-center">
-                                        <div><span className="block text-green-400 font-bold text-2xl">{wordleStats.won}</span><span className="text-sm opacity-75 text-gray-300">WON</span></div>
-                                        <div><span className="block text-yellow-400 font-bold text-2xl">{wordleStats.attempting}</span><span className="text-sm opacity-75 text-gray-300">TRYING</span></div>
-                                        <div><span className="block text-red-400 font-bold text-2xl">{wordleStats.lost}</span><span className="text-sm opacity-75 text-gray-300">LOST</span></div>
-                                        <div><span className="block text-white font-bold text-2xl">{wordleStats.total}</span><span className="text-sm opacity-75 text-gray-300">TOTAL</span></div>
+                                <div className="mt-8 glass-card p-6 rounded-2xl border border-white/10 bg-black/20">
+                                    <h4 className="text-lg font-bold mb-6 text-center text-gray-400 uppercase tracking-widest">Live Game Stats</h4>
+                                    <div className="grid grid-cols-4 gap-4">
+                                        <div className="bg-green-500/10 p-4 rounded-xl border border-green-500/20 text-center">
+                                            <span className="block text-4xl font-black text-green-400 mb-1">{wordleStats.won}</span>
+                                            <span className="text-xs font-bold text-green-600 uppercase">Won</span>
+                                        </div>
+                                        <div className="bg-yellow-500/10 p-4 rounded-xl border border-yellow-500/20 text-center">
+                                            <span className="block text-4xl font-black text-yellow-400 mb-1">{wordleStats.attempting}</span>
+                                            <span className="text-xs font-bold text-yellow-600 uppercase">Trying</span>
+                                        </div>
+                                        <div className="bg-red-500/10 p-4 rounded-xl border border-red-500/20 text-center">
+                                            <span className="block text-4xl font-black text-red-400 mb-1">{wordleStats.lost}</span>
+                                            <span className="text-xs font-bold text-red-600 uppercase">Failed</span>
+                                        </div>
+                                        <div className="bg-white/5 p-4 rounded-xl border border-white/10 text-center">
+                                            <span className="block text-4xl font-black text-white mb-1">{wordleStats.total}</span>
+                                            <span className="text-xs font-bold text-gray-500 uppercase">Total</span>
+                                        </div>
                                     </div>
                                 </div>
                             )}
                         </>
                     )}
-                    {(() => { const historyItems = completedActivities.filter(item => item.activityType === currentActivityType); if (historyItems.length === 0) return null; return (<div className={`mt-8 p-6 rounded-lg border backdrop-blur-sm ${enableGamification ? 'bg-purple-900/10 border-purple-500/20' : 'bg-red-900/10 border-red-500/20'}`}><h3 className={`text-xl font-bold mb-4 flex items-center gap-2 ${enableGamification ? 'text-purple-300' : 'text-red-300'}`}><span className="text-2xl">📜</span> Previous {currentActivityType.toUpperCase()} Questions</h3><div className="space-y-4">{historyItems.map((item) => (<div key={item.id} className="bg-white/5 p-4 rounded-lg border border-white/10 hover:bg-white/10 transition group"><div className="flex justify-between items-start mb-2"><div><p className="font-semibold text-white text-lg">{item.activityDetails.question || item.activityDetails.questions?.[0]?.question || "Question"}</p><p className="text-xs text-gray-400 mt-1">{new Date(item.timestamp).toLocaleTimeString()}</p></div><div className="flex gap-2"><span className="bg-gray-700 text-white text-xs px-2 py-1 rounded-full h-fit">{item.responses?.length || 0} Responses</span><button onClick={() => handleReuseActivity(item)} className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-1 rounded-full shadow transition opacity-0 group-hover:opacity-100">♻️ Reuse</button></div></div><div className="text-sm text-gray-300 pl-2 border-l-2 border-gray-600">{item.activityType === 'wordcloud' && <p className="italic">Word Cloud saved.</p>}{(item.activityType === 'feedback' || item.activityType === 'qa') && (<div className="max-h-20 overflow-hidden text-gray-400">{item.responses.slice(0, 2).map((r, i) => (<p key={i}>• {r.answer}</p>))}{item.responses.length > 2 && <p>...</p>}</div>)}{item.activityType === 'mcq' && <p>MCQ Results saved.</p>}</div><div className="mt-3 text-right"><button onClick={() => generatePDF(item.report)} className="text-blue-400 hover:text-blue-300 text-sm underline">Download Report 📥</button></div></div>))}</div></div>); })()}
+                    
+                    {/* Inline History */}
+                    {(() => {
+                        const historyItems = completedActivities.filter(item => item.activityType === currentActivityType);
+                        if (historyItems.length === 0) return null;
+                        return (
+                            <div className="mt-12">
+                                <h3 className="text-xl font-bold text-gray-400 mb-6 flex items-center gap-3">
+                                    <span className="w-8 h-[2px] bg-gray-600"></span> Previous {currentActivityType.toUpperCase()}s
+                                </h3>
+                                <div className="space-y-4">
+                                    {historyItems.map((item) => (
+                                        <div key={item.id} className="glass-card p-4 rounded-xl border border-white/5 hover:border-white/20 transition group flex justify-between items-center">
+                                            <div>
+                                                <p className="font-bold text-white text-lg mb-1">{item.activityDetails.question || item.activityDetails.questions?.[0]?.question || "Untitled Activity"}</p>
+                                                <p className="text-xs text-gray-500 font-mono">{new Date(item.timestamp).toLocaleTimeString()}</p>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="text-right mr-4">
+                                                    <span className="block text-2xl font-bold text-white">{item.responses?.length || 0}</span>
+                                                    <span className="text-[10px] text-gray-500 uppercase">Responses</span>
+                                                </div>
+                                                <button onClick={() => handleReuseActivity(item)} className="p-2 bg-white/5 hover:bg-white/20 rounded-lg text-blue-300 transition" title="Reuse"><IconCopy /></button>
+                                                <button onClick={() => generatePDF(item.report)} className="p-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white shadow-lg transition" title="Download Report">📥</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
                 
-                 <footer className={`bg-black/20 backdrop-blur-md p-4 border-t ${enableGamification ? 'border-purple-500/30' : 'border-red-900/30'} flex items-center justify-center sticky bottom-0 z-20`}>
+                {/* Footer Controls */}
+                 <footer className="glass-card m-4 p-4 rounded-2xl flex items-center justify-center sticky bottom-4 z-20 border border-white/10 shadow-2xl">
                     <div className="flex gap-4">
-                        {(!isSessionLive || liveActivity?.type !== 'playlist') && (<button onClick={handleAddToPlaylist} className="px-6 py-3 text-lg font-bold rounded-full bg-gray-700 hover:bg-gray-600 text-white shadow-lg flex items-center gap-2"><IconPlus /> Add to Playlist</button>)}
-                        {(!isSessionLive || liveActivity?.type !== 'playlist') && (<button onClick={handleLaunchSingle} className="px-8 py-3 text-lg font-bold rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg border border-blue-400">🚀 Start This Activity</button>)}
-                        {playlist.length > 0 && !isSessionLive && (<button onClick={handleLaunchPlaylist} className="px-8 py-3 text-lg font-bold rounded-full bg-purple-600 hover:bg-purple-700 text-white shadow-lg border border-purple-400 flex items-center gap-2"><span className="animate-pulse">💽</span> Launch Playlist ({playlist.length})</button>)}
-                        {isSessionLive && (<button onClick={handleEndActivity} className="px-8 py-3 text-lg font-bold rounded-full bg-yellow-600 hover:bg-yellow-500 text-white shadow-lg">⏸️ End Activity</button>)}
+                        {(!isSessionLive || liveActivity?.type !== 'playlist') && (
+                            <button onClick={handleAddToPlaylist} className="px-6 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-white font-bold transition flex items-center gap-2 border border-white/10">
+                                <IconPlus /> Add to Playlist
+                            </button>
+                        )}
+                        {(!isSessionLive || liveActivity?.type !== 'playlist') && (
+                            <button onClick={handleLaunchSingle} className="px-8 py-3 rounded-xl btn-primary text-white font-bold shadow-lg shadow-purple-500/30 border border-white/20">
+                                🚀 Start This Activity
+                            </button>
+                        )}
+                        {playlist.length > 0 && !isSessionLive && (
+                            <button onClick={handleLaunchPlaylist} className="px-8 py-3 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-bold shadow-lg shadow-pink-500/30 border border-white/20 flex items-center gap-2">
+                                <span className="animate-pulse">💽</span> Launch Playlist ({playlist.length})
+                            </button>
+                        )}
+                        {isSessionLive && (
+                            <button onClick={handleEndActivity} className="px-10 py-3 rounded-xl bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-400 hover:to-orange-500 text-white font-bold shadow-lg shadow-orange-500/30 border border-white/20">
+                                ⏸️ End Activity
+                            </button>
+                        )}
                     </div>
                 </footer>
             </main>
@@ -505,76 +675,99 @@ const TeacherView = ({ setView, roomCode }) => {
             {showShareLink && (<div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100"><div className="p-8"><h2 className="text-3xl font-extrabold text-gray-900 mb-2">Share Session</h2><p className="text-gray-500 mb-8 text-base">Share this link with your students to let them join the session:</p><div className="bg-gray-50 p-4 rounded-xl mb-6 border border-gray-100"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Shareable Link:</label><div className="flex items-center bg-gray-700 rounded-lg text-gray-200 p-3 font-mono text-sm overflow-x-auto whitespace-nowrap shadow-inner">{`${window.location.origin}/?room=${roomCode}`}</div></div><div className="bg-gray-50 p-6 rounded-xl mb-8 border border-gray-100 text-center"><label className="block text-gray-400 text-sm font-medium mb-2">Room Code:</label><div className="text-4xl font-black text-teal-500 tracking-[0.2em] drop-shadow-sm">{roomCode}</div></div><div className="space-y-3"><button onClick={handleCopyLink} className={`w-full font-bold py-4 rounded-xl text-lg flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-lg ${linkCopied ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>{linkCopied ? <span>✓ Copied!</span> : <><IconCopy /> Copy Link</>}</button><button onClick={() => setShowShareLink(false)} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 rounded-xl transition-colors">Close</button></div></div></div></div>)}
             
             {showResults && (
-                <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
-                    <div className="bg-white border border-gray-300 rounded-lg shadow-2xl p-6 w-full max-w-lg text-gray-900">
-                        <h3 className="text-2xl font-bold mb-2 text-teal-700">Live Results: {displayActivity.type.toUpperCase()}</h3>
-                        <p className="mb-4 text-gray-600">Total Responses: <span className="font-bold">{liveResults.total}</span></p>
-                        <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                           {displayActivity.type === 'mcq' && liveResults.responses.map((res, i) => (<div key={i}><div className="flex justify-between mb-1"><span className="text-base font-medium text-gray-700">{res.option}</span><span className="text-sm font-medium text-gray-600">{res.count} votes</span></div><div className="w-full bg-gray-100 rounded-full h-4"><div className="bg-teal-600 h-4 rounded-full" style={{width: `${liveResults.total > 0 ? (res.count/liveResults.total)*100 : 0}%`}}></div></div></div>))}
-                           {displayActivity.type === 'reviews' && (<div className="flex justify-around items-center text-center">{liveResults.responses.map((res, i) => (<div key={i}><p className="text-5xl">{res.icon}</p><p className="font-bold text-xl mt-2">{res.count}</p></div>))}</div>)}
-                           {displayActivity.type === 'wordcloud' && (<div className="text-center p-4 bg-white rounded-lg flex flex-wrap justify-center items-center">{liveResults.words.map((w,i) => (<span key={i} style={{fontSize: `${Math.min(48, Math.max(12, 10 + w.value*2))}px`, margin: '4px 8px', display: 'inline-block', fontWeight: '600', color: `hsl(${200 + i*25}, 80%, 70%)`}}>{w.text}</span>))}</div>)}
-                           {(displayActivity.type === 'feedback' || displayActivity.type === 'qa') && liveResults.responses.map((res, idx) => (<div key={idx} className="bg-gray-100 p-3 rounded-lg flex justify-between items-center mb-2"><div><span className="font-bold text-sm text-teal-600 block">{res.studentName}</span><p className="text-gray-700">{res.answer}</p></div></div>))}
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in-fast">
+                    <div className="glass-card bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-xl text-white">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">Live Results</h3>
+                            <button onClick={() => setShowResults(false)} className="text-gray-400 hover:text-white transition text-2xl">×</button>
                         </div>
-                        <div className="mt-6 flex gap-3"><button onClick={() => setShowResults(false)} className="flex-1 bg-gray-100 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-600 transition">Close</button></div>
+                        <p className="mb-6 text-gray-400 font-medium">Total Responses: <span className="text-white font-bold text-xl">{liveResults.total}</span></p>
+                        <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                           {displayActivity.type === 'mcq' && liveResults.responses.map((res, i) => (<div key={i}><div className="flex justify-between mb-2"><span className="text-lg font-medium text-gray-200">{res.option}</span><span className="text-sm font-bold text-blue-400">{res.count} votes</span></div><div className="w-full bg-white/10 rounded-full h-4 overflow-hidden"><div className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-1000" style={{width: `${liveResults.total > 0 ? (res.count/liveResults.total)*100 : 0}%`}}></div></div></div>))}
+                           {displayActivity.type === 'reviews' && (<div className="flex justify-around items-center text-center py-4">{liveResults.responses.map((res, i) => (<div key={i} className="flex flex-col items-center gap-2"><span className="text-5xl">{res.icon}</span><span className="font-black text-2xl text-white">{res.count}</span></div>))}</div>)}
+                           {displayActivity.type === 'wordcloud' && (<div className="text-center p-6 bg-white/5 rounded-xl border border-white/5 flex flex-wrap justify-center items-center gap-3">{liveResults.words.map((w,i) => (<span key={i} style={{fontSize: `${Math.min(48, Math.max(14, 12 + w.value*3))}px`}} className="font-bold text-transparent bg-clip-text bg-gradient-to-br from-blue-300 to-purple-300 inline-block">{w.text}</span>))}</div>)}
+                           {(displayActivity.type === 'feedback' || displayActivity.type === 'qa') && liveResults.responses.map((res, idx) => (<div key={idx} className="bg-white/5 p-4 rounded-xl border border-white/5 mb-3"><div className="flex justify-between items-start"><span className="font-bold text-sm text-blue-400 block mb-1">{res.studentName}</span><span className="text-[10px] text-gray-500">{new Date(res.timestamp?.seconds * 1000).toLocaleTimeString()}</span></div><p className="text-gray-200">{res.answer}</p></div>))}
+                        </div>
+                        <div className="mt-8">
+                            <button onClick={() => setShowResults(false)} className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition">Close</button>
+                        </div>
                     </div>
                 </div>
             )}
             
             {showAnalyticsModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white border border-gray-300 rounded-lg shadow-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-                        <h2 className="text-2xl font-bold mb-4 text-teal-700">📊 Session Analytics</h2>
-                        {completedActivities.length === 0 ? (<p className="text-gray-500 text-center py-8">No activities have been completed yet.</p>) : (
-                            <div className="space-y-4">{completedActivities.map((act) => (<div key={act.id} className="p-4 bg-gray-50 rounded-lg border"><div className="flex justify-between"><div><p className="text-lg font-bold text-gray-900">{act.activityType.toUpperCase()}</p><p className="text-sm text-gray-500">{new Date(act.timestamp).toLocaleString()}</p></div><button onClick={() => generatePDF(act.report)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">📥 Download PDF</button></div></div>))}</div>
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="glass-card bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-4xl max-h-[90vh] overflow-y-auto custom-scrollbar text-white">
+                        <div className="flex justify-between items-center mb-8">
+                            <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">📊 Session Analytics</h2>
+                            <button onClick={() => setShowAnalyticsModal(false)} className="text-gray-400 hover:text-white text-2xl">×</button>
+                        </div>
+                        {completedActivities.length === 0 ? (<p className="text-gray-500 text-center py-12 text-lg">No activities have been completed yet.</p>) : (
+                            <div className="space-y-4">{completedActivities.map((act) => (<div key={act.id} className="p-6 bg-white/5 rounded-xl border border-white/5 flex justify-between items-center hover:bg-white/10 transition"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center text-blue-400 font-bold text-xl">{act.activityType.charAt(0).toUpperCase()}</div><div><p className="text-lg font-bold text-white uppercase tracking-wide">{act.activityType}</p><p className="text-sm text-gray-400">{new Date(act.timestamp).toLocaleString()}</p></div></div><button onClick={() => generatePDF(act.report)} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">Download PDF</button></div>))}</div>
                         )}
-                        {completedActivities.length > 0 && (<button onClick={() => generateCombinedPDF(completedActivities.map(a => a.report))} className="w-full mt-6 bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-lg font-bold shadow-md transition">📘 Download Full Session Report (All Activities)</button>)}
-                        <button onClick={() => setShowAnalyticsModal(false)} className="mt-6 w-full bg-gray-200 text-gray-900 py-2 rounded hover:bg-gray-300">Close</button>
+                        {completedActivities.length > 0 && (<button onClick={() => generateCombinedPDF(completedActivities.map(a => a.report))} className="w-full mt-8 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white py-4 rounded-xl font-bold shadow-lg transition">📘 Download Full Session Report (All Activities)</button>)}
                     </div>
                 </div>
             )}
 
             {showLeaderboard && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
-                    <div className="bg-[#FFFBEB] rounded-xl shadow-2xl p-8 w-full max-w-5xl flex flex-col h-[85vh] relative overflow-hidden">
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in-fast">
+                    <div className="glass-card bg-[#fffbeb] rounded-2xl shadow-2xl p-8 w-full max-w-5xl flex flex-col h-[85vh] relative overflow-hidden border border-white/20">
                         <div className="flex justify-between items-center mb-6 flex-shrink-0">
-                            <h2 className="text-4xl font-bold text-[#D97706] flex items-center gap-3 tracking-wide"><span className="text-5xl drop-shadow-sm">🏆</span> Leaderboard - Top Players</h2>
-                            <button onClick={() => { playSound('click'); setShowLeaderboard(false); }} className="bg-[#14B8A6] hover:bg-[#0D9488] text-white px-6 py-2 rounded-lg font-bold text-lg transition-transform transform active:scale-95 shadow-md flex items-center gap-2">✕ Close</button>
+                            <h2 className="text-4xl font-black text-amber-600 flex items-center gap-3 tracking-wide drop-shadow-sm"><span className="text-5xl">🏆</span> Leaderboard</h2>
+                            <button onClick={() => { playSound('click'); setShowLeaderboard(false); }} className="bg-teal-500 hover:bg-teal-600 text-white px-6 py-2 rounded-xl font-bold text-lg shadow-lg transition transform active:scale-95">✕ Close</button>
                         </div>
-                        <div className="flex-1 overflow-y-auto bg-white/60 rounded-xl shadow-inner mb-6 border border-orange-100 p-4 custom-scrollbar">
+                        <div className="flex-1 overflow-y-auto bg-white/60 rounded-xl shadow-inner mb-6 border border-amber-200 p-4 custom-scrollbar">
                             {allParticipants.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-4"><p className="text-2xl font-light">No players yet. Start a session to see rankings!</p><p className="text-sm flex items-center gap-2 opacity-75">🎮 Enable gamification to track points</p></div>
+                                <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-4"><p className="text-2xl font-light">No players yet.</p></div>
                             ) : (
                                 <table className="w-full">
-                                    <thead className="sticky top-0 bg-[#FFFBEB] text-gray-700 z-10 border-b-2 border-orange-200">
+                                    <thead className="sticky top-0 bg-[#fffbeb] text-gray-700 z-10 border-b-2 border-amber-200">
                                         <tr><th className="px-6 py-4 text-left text-xl font-bold text-gray-600">Rank</th><th className="px-6 py-4 text-left text-xl font-bold text-gray-600">Player</th><th className="px-4 py-4 text-center text-xl font-bold text-gray-600">Badges</th><th className="px-6 py-4 text-right text-xl font-bold text-gray-600">Points</th></tr>
                                     </thead>
                                     <tbody className="text-gray-700">
                                         {allParticipants.sort((a, b) => (b.score || 0) - (a.score || 0)).map((player, idx) => (
-                                            <tr key={idx} className="border-b border-orange-100 hover:bg-orange-50 transition-colors">
+                                            <tr key={idx} className="border-b border-amber-100 hover:bg-amber-50 transition-colors">
                                                 <td className="px-6 py-4"><span className="text-2xl font-bold text-gray-400">#{idx + 1}</span></td>
-                                                <td className="px-6 py-4"><div className="flex items-center gap-3"><span className="text-2xl bg-gray-100 rounded-full w-10 h-10 flex items-center justify-center shadow-sm">{player.avatar || '👤'}</span><span className="text-xl font-semibold text-gray-800">{player.name}</span></div></td>
-                                                <td className="px-4 py-4 text-center"><div className="flex justify-center gap-1 flex-wrap">{player.badges && player.badges.map((b, i) => (<span key={i} className="text-2xl" title="Badge">{b}</span>))}</div></td>
-                                                <td className="px-6 py-4 text-right"><span className="text-2xl font-bold text-[#D97706]">{player.score || 0}</span></td>
+                                                <td className="px-6 py-4"><div className="flex items-center gap-4"><span className="text-3xl bg-white rounded-full w-12 h-12 flex items-center justify-center shadow-sm border border-amber-100">{player.avatar || '👤'}</span><span className="text-xl font-bold text-gray-800">{player.name}</span></div></td>
+                                                <td className="px-4 py-4 text-center"><div className="flex justify-center gap-2 flex-wrap">{player.badges && player.badges.map((b, i) => (<span key={i} className="text-2xl filter drop-shadow-sm" title="Badge">{b}</span>))}</div></td>
+                                                <td className="px-6 py-4 text-right"><span className="text-3xl font-black text-amber-600">{player.score || 0}</span></td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
                             )}
                         </div>
-                        <div className="flex-shrink-0 text-center border-t border-orange-200 pt-4">
-                            <div className="mb-4"><h4 className="text-gray-700 font-bold text-lg mb-2 flex items-center justify-center gap-2"><span>🎯</span> Points System:</h4><p className="text-gray-600 text-base font-medium">Participation: 10 pts <span className="text-gray-300 mx-3">|</span> Correct Answer: +20 pts <span className="text-gray-300 mx-3">|</span> Speed Bonus: +15 pts <span className="text-gray-300 mx-3">|</span> Quality Answer: +15 pts</p></div>
-                            <div><h4 className="text-gray-700 font-bold text-lg mb-2 flex items-center justify-center gap-2"><span>🏅</span> Badges:</h4><p className="text-gray-600 text-base font-medium flex flex-wrap justify-center items-center gap-x-2"><span className="flex items-center gap-1">🎯 First Response</span> <span className="text-gray-300 mx-2">|</span> <span className="flex items-center gap-1">✅ Correct</span> <span className="text-gray-300 mx-2">|</span> <span className="flex items-center gap-1">⚡ Speed Demon</span> <span className="text-gray-300 mx-2">|</span> <span className="flex items-center gap-1">📝 Wordsmith</span> <span className="text-gray-300 mx-2">|</span> <span className="flex items-center gap-1">💯 Perfect Score</span> <span className="text-gray-300 mx-2">|</span> <span className="flex items-center gap-1">👑 Participation King</span></p></div>
+                        <div className="flex-shrink-0 text-center border-t border-amber-200 pt-6">
+                            <div className="flex flex-wrap justify-center gap-8 text-amber-900/70 text-sm font-medium">
+                                <span className="flex items-center gap-2"><b className="text-amber-700">Participation:</b> 10 pts</span>
+                                <span className="flex items-center gap-2"><b className="text-amber-700">Correct:</b> +20 pts</span>
+                                <span className="flex items-center gap-2"><b className="text-amber-700">Speed (&lt;3s):</b> +15 pts</span>
+                                <span className="flex items-center gap-2"><b className="text-amber-700">Wordle Win:</b> +20 pts</span>
+                                <span className="flex items-center gap-2"><b className="text-amber-700">Quality:</b> +15 pts</span>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
 
             {showParticipants && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 animate-fade-in-fast">
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg shadow-2xl p-6 w-full max-w-md text-gray-900">
-                        <h3 className="text-2xl font-bold text-gray-900 mb-4">Room Participants <span className="text-teal-600">({allParticipants.length})</span></h3>
-                        <div className="bg-white rounded-lg border border-gray-200 shadow-inner max-h-80 overflow-y-auto"><ul className="divide-y divide-gray-100">{allParticipants.map((p, index) => (<li key={index} className="p-3 flex items-center hover:bg-teal-50 transition-colors border-b border-gray-100 last:border-0"><div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold mr-3 text-xl shadow-sm">{p.avatar || (p.name || 'A').charAt(0).toUpperCase()}</div><span className="font-medium text-gray-800 text-lg">{p.name}</span></li>))}</ul></div>
-                        <button onClick={() => setShowParticipants(false)} className="mt-6 w-full bg-gray-800 text-white px-4 py-3 rounded-lg hover:bg-gray-700 transition font-semibold">Close</button>
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in-fast">
+                    <div className="glass-card bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md text-white">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-2xl font-bold text-white">Room Participants <span className="text-blue-400">({allParticipants.length})</span></h3>
+                            <button onClick={() => setShowParticipants(false)} className="text-gray-400 hover:text-white text-2xl">×</button>
+                        </div>
+                        <div className="bg-white/5 rounded-xl border border-white/5 shadow-inner max-h-96 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                            {allParticipants.map((p, index) => (
+                                <div key={index} className="p-3 flex items-center hover:bg-white/10 rounded-lg transition-colors gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center font-bold text-xl shadow-lg">
+                                        {p.avatar || (p.name || 'A').charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="font-medium text-gray-200 text-lg">{p.name}</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}
