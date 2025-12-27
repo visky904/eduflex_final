@@ -685,7 +685,54 @@ const TeacherView = ({ setView, roomCode }) => {
                         <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
                            {displayActivity.type === 'mcq' && liveResults.responses.map((res, i) => (<div key={i}><div className="flex justify-between mb-2"><span className="text-lg font-medium text-gray-200">{res.option}</span><span className="text-sm font-bold text-blue-400">{res.count} votes</span></div><div className="w-full bg-white/10 rounded-full h-4 overflow-hidden"><div className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-1000" style={{width: `${liveResults.total > 0 ? (res.count/liveResults.total)*100 : 0}%`}}></div></div></div>))}
                            {displayActivity.type === 'reviews' && (<div className="flex justify-around items-center text-center py-4">{liveResults.responses.map((res, i) => (<div key={i} className="flex flex-col items-center gap-2"><span className="text-5xl">{res.icon}</span><span className="font-black text-2xl text-white">{res.count}</span></div>))}</div>)}
-                           {displayActivity.type === 'wordcloud' && (<div className="text-center p-6 bg-white/5 rounded-xl border border-white/5 flex flex-wrap justify-center items-center gap-3">{liveResults.words.map((w,i) => (<span key={i} style={{fontSize: `${Math.min(48, Math.max(14, 12 + w.value*3))}px`}} className="font-bold text-transparent bg-clip-text bg-gradient-to-br from-blue-300 to-purple-300 inline-block">{w.text}</span>))}</div>)}
+                           {displayActivity.type === 'wordcloud' && (
+                               <div className="relative w-full min-h-[400px] p-6 bg-white/5 rounded-xl border border-white/5 overflow-hidden">
+                                   {liveResults.words.map((w, i) => {
+                                       // Enhanced size scaling: base 16px + exponential growth based on frequency
+                                       const size = Math.min(64, Math.max(16, 16 + Math.pow(w.value, 1.5) * 8));
+                                       const colors = [
+                                           'from-blue-400 to-cyan-400',
+                                           'from-purple-400 to-pink-400',
+                                           'from-green-400 to-emerald-400',
+                                           'from-orange-400 to-red-400',
+                                           'from-indigo-400 to-purple-400',
+                                           'from-teal-400 to-blue-400',
+                                           'from-yellow-400 to-orange-400',
+                                           'from-rose-400 to-pink-400'
+                                       ];
+                                       const colorClass = colors[i % colors.length];
+                                       
+                                       // Spiral placement algorithm for better distribution
+                                       const angle = i * 137.5; // Golden angle
+                                       const radius = Math.sqrt(i + 1) * 45;
+                                       const centerX = 50;
+                                       const centerY = 50;
+                                       const x = centerX + radius * Math.cos(angle * Math.PI / 180);
+                                       const y = centerY + radius * Math.sin(angle * Math.PI / 180);
+                                       
+                                       // Random rotation for natural look
+                                       const rotation = (i * 47) % 60 - 30; // -30 to +30 degrees
+                                       
+                                       return (
+                                           <span
+                                               key={i}
+                                               style={{ 
+                                                   fontSize: `${size}px`, 
+                                                   fontWeight: Math.min(900, 600 + w.value * 50),
+                                                   position: 'absolute',
+                                                   left: `${Math.max(5, Math.min(90, x))}%`,
+                                                   top: `${Math.max(10, Math.min(85, y))}%`,
+                                                   transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+                                                   whiteSpace: 'nowrap'
+                                               }}
+                                               className={`text-transparent bg-clip-text bg-gradient-to-br ${colorClass} hover:scale-110 transition-transform cursor-default animate-fade-in`}
+                                           >
+                                               {w.text}
+                                           </span>
+                                       );
+                                   })}
+                               </div>
+                           )}
                            {(displayActivity.type === 'feedback' || displayActivity.type === 'qa') && liveResults.responses.map((res, idx) => (<div key={idx} className="bg-white/5 p-4 rounded-xl border border-white/5 mb-3"><div className="flex justify-between items-start"><span className="font-bold text-sm text-blue-400 block mb-1">{res.studentName}</span><span className="text-[10px] text-gray-500">{new Date(res.timestamp?.seconds * 1000).toLocaleTimeString()}</span></div><p className="text-gray-200">{res.answer}</p></div>))}
                         </div>
                         <div className="mt-8">

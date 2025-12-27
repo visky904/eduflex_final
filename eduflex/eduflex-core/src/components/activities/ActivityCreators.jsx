@@ -309,50 +309,55 @@ export const WordCloudCreator = ({ activity, setActivity, liveResults }) => {
             {liveResults && liveResults.words && liveResults.words.length > 0 && (
                 <div className="mt-8 p-6 bg-white bg-opacity-75 rounded-lg border border-gray-200">
                    <h4 className="text-lg font-semibold text-gray-900 mb-4">Live Word Cloud</h4>
-                   <div className="relative w-full min-h-[14rem] bg-white rounded-lg border overflow-hidden">
-            {liveResults && liveResults.words && liveResults.words.length > 0 && (
-            <div className="mt-8 p-6 bg-white bg-opacity-75 rounded-lg border border-gray-200">
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">Live Word Cloud</h4>
-
-                <div className="relative w-full min-h-[18rem] bg-white rounded-lg border overflow-hidden">
-            {liveResults.words.map((w, i) => {
-                // much stronger curve
-                const rawSize = 12 + Math.pow(w.value, 2.2) * 10;
-
-                // cap max-size for safety
-                const size = Math.min(rawSize, 80); // can adjust later
-
-                const top = 10 + Math.random() * 60;
-                const left = 10 + Math.random() * 70;
-
-                const rotate = Math.random() * 40 - 20;
-                const color = `hsl(${(i * 47) % 360}, 65%, 45%)`;
-
-                return (
-                <span
-                    key={i}
-                    className="absolute whitespace-nowrap font-semibold select-none"
-                    style={{
-                    top: `${top}%`,
-                    left: `${left}%`,
-                    fontSize: `${size}px`,
-                    transform: `translate(-50%, -50%) rotate(${rotate}deg)`,
-                    color,
-                    opacity: 0.92,
-                    pointerEvents: "none",
-                    }}
-                >
-                    {w.text}
-                </span>
-                );
-            })}
-
-                </div>
-            </div>
-            )}
-
-            </div>
-
+                   <div className="relative w-full min-h-[400px] p-8 bg-white rounded-lg border overflow-hidden">
+                       {liveResults.words.map((w, i) => {
+                           // Enhanced size scaling: base 16px + exponential growth based on frequency
+                           const size = Math.min(64, Math.max(16, 16 + Math.pow(w.value, 1.5) * 8));
+                           const colors = [
+                               'from-blue-500 to-cyan-500',
+                               'from-purple-500 to-pink-500',
+                               'from-green-500 to-emerald-500',
+                               'from-orange-500 to-red-500',
+                               'from-indigo-500 to-purple-500',
+                               'from-teal-500 to-blue-500'
+                           ];
+                           const colorClass = colors[i % colors.length];
+                           
+                           // Truncate very long words
+                           const displayText = w.text.length > 20 ? w.text.substring(0, 20) + '...' : w.text;
+                           
+                           // Spiral placement algorithm for better distribution
+                           const angle = i * 137.5; // Golden angle
+                           const radius = Math.sqrt(i + 1) * 30; // Further reduced radius
+                           const centerX = 50;
+                           const centerY = 50;
+                           const x = centerX + radius * Math.cos(angle * Math.PI / 180);
+                           const y = centerY + radius * Math.sin(angle * Math.PI / 180);
+                           
+                           // Smaller rotation to prevent overflow
+                           const rotation = (i * 37) % 30 - 15; // -15 to +15 degrees
+                           
+                           return (
+                               <span
+                                   key={i}
+                                   style={{ 
+                                       fontSize: `${size}px`, 
+                                       fontWeight: Math.min(900, 600 + w.value * 50),
+                                       position: 'absolute',
+                                       left: `${Math.max(15, Math.min(80, x))}%`,
+                                       top: `${Math.max(20, Math.min(75, y))}%`,
+                                       transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+                                       whiteSpace: 'nowrap',
+                                       maxWidth: '60%'
+                                   }}
+                                   className={`text-transparent bg-clip-text bg-gradient-to-br ${colorClass} hover:scale-110 transition-transform cursor-default`}
+                                   title={w.text}
+                               >
+                                   {displayText}
+                               </span>
+                           );
+                       })}
+                   </div>
                 </div>
             )}
         </div>
