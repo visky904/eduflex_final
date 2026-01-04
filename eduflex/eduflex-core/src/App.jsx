@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore'; 
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { generateRoomCode } from './utils/helpers';
 import TeacherView from './components/TeacherView';
 import StudentView from './components/StudentView';
@@ -21,14 +21,14 @@ const HomePage = ({ setView, onTeacherLogin, recentSessions, onClearHistory, onR
         <div className="min-h-screen bg-animated text-white flex items-center justify-center p-4 sm:p-8">
             {/* Main Container - Glass Card */}
             <div className="w-full max-w-6xl h-[85vh] glass-card rounded-3xl overflow-hidden flex flex-col md:flex-row shadow-2xl animate-fade-in">
-                
+
                 {/* LEFT SIDE: Hero / Branding */}
                 <div className="md:w-1/2 p-8 sm:p-12 flex flex-col justify-center relative overflow-hidden bg-black/20">
                     <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none">
                         <div className="absolute top-[-20%] left-[-20%] w-96 h-96 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-float"></div>
-                        <div className="absolute bottom-[-20%] right-[-20%] w-96 h-96 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-float" style={{animationDelay: '2s'}}></div>
+                        <div className="absolute bottom-[-20%] right-[-20%] w-96 h-96 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-float" style={{ animationDelay: '2s' }}></div>
                     </div>
-                    
+
                     <div className="relative z-10">
                         <div className="mb-6 inline-block px-4 py-1.5 rounded-full border border-white/20 bg-white/5 backdrop-blur-sm text-xs font-bold tracking-widest uppercase text-blue-300">
                             Live Classroom
@@ -39,7 +39,7 @@ const HomePage = ({ setView, onTeacherLogin, recentSessions, onClearHistory, onR
                         <p className="text-xl text-gray-300 font-light mb-8 max-w-md leading-relaxed">
                             The interactive classroom platform that lets you <span className="text-white font-medium">improvise</span>, <span className="text-white font-medium">engage</span>, and <span className="text-white font-medium">gamify</span> learning in real-time.
                         </p>
-                        
+
                         <div className="flex gap-4 text-sm text-gray-400 font-mono">
                             <div className="flex items-center gap-2"><span className="w-2 h-2 bg-green-400 rounded-full"></span> Zero Latency</div>
                             <div className="flex items-center gap-2"><span className="w-2 h-2 bg-blue-400 rounded-full"></span> No Signup</div>
@@ -53,7 +53,7 @@ const HomePage = ({ setView, onTeacherLogin, recentSessions, onClearHistory, onR
                     {!showLogin ? (
                         <div className="space-y-6 w-full max-w-sm mx-auto">
                             <h2 className="text-3xl font-bold mb-8">Get Started</h2>
-                            
+
                             <button onClick={onRequestCreate} className="group w-full btn-primary p-1 rounded-xl">
                                 <div className="bg-transparent text-white py-4 px-6 rounded-xl flex items-center justify-between font-bold text-lg group-hover:bg-white/10 transition">
                                     <span>➕ Create Session</span>
@@ -67,7 +67,7 @@ const HomePage = ({ setView, onTeacherLogin, recentSessions, onClearHistory, onR
                                     <span className="text-2xl group-hover:translate-x-2 transition">→</span>
                                 </div>
                             </button>
-                            
+
                             <div className="pt-8 border-t border-white/10">
                                 <div className="flex justify-between items-center mb-4">
                                     <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Recent Sessions</span>
@@ -96,7 +96,7 @@ const HomePage = ({ setView, onTeacherLogin, recentSessions, onClearHistory, onR
                             <button onClick={() => setShowLogin(false)} className="text-sm text-gray-400 hover:text-white mb-6 flex items-center gap-2">← Back</button>
                             <h2 className="text-3xl font-bold mb-2">Teacher Login</h2>
                             <p className="text-gray-400 mb-8 text-sm">Enter credentials to resume control.</p>
-                            
+
                             <form onSubmit={handleLoginSubmit} className="space-y-5">
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Room Code</label>
@@ -121,10 +121,10 @@ export default function App() {
     // ... (App Logic remains exactly the same as the previous fixed version) ...
     // Copy the logic from the previous answer for App() function, 
     // just use the new HomePage component above.
-    
+
     // For completeness of the file:
-    const [initialJoinCode, setInitialJoinCode] = useState(() => { const params = new URLSearchParams(window.location.search); return params.get('room'); });
-    const [magicKey, setMagicKey] = useState(() => { const params = new URLSearchParams(window.location.search); return params.get('key'); });
+    const [initialJoinCode] = useState(() => { const params = new URLSearchParams(window.location.search); return params.get('room'); });
+    const [magicKey] = useState(() => { const params = new URLSearchParams(window.location.search); return params.get('key'); });
     const [view, setView] = useState(() => { const params = new URLSearchParams(window.location.search); if (params.get('room')) return 'loading'; return 'home'; });
     const [roomCode, setRoomCode] = useState(() => localStorage.getItem('teacherRoomCode') || null);
     const [recentSessions, setRecentSessions] = useState(() => JSON.parse(localStorage.getItem('eduFlex_recentSessions') || '[]'));
@@ -142,6 +142,7 @@ export default function App() {
             } else if (view === 'loading') { setView('home'); }
         };
         checkMagicLink();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleCreateSession = async (e) => {
@@ -179,7 +180,7 @@ export default function App() {
         } catch (err) { console.error(err); setErrorCallback("Connection error."); }
     };
 
-    const clearHistory = () => { if(window.confirm('Clear your local session history?')) { setRecentSessions([]); localStorage.removeItem('eduFlex_recentSessions'); } };
+    const clearHistory = () => { if (window.confirm('Clear your local session history?')) { setRecentSessions([]); localStorage.removeItem('eduFlex_recentSessions'); } };
     const handleSetView = (newView) => { if (newView === 'home') { setRoomCode(null); } setView(newView); };
 
     if (view === 'loading') return <div className="min-h-screen bg-[#0f172a] flex items-center justify-center text-white"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div></div>;

@@ -4,7 +4,7 @@ import { collection, onSnapshot, query, updateDoc, doc, deleteDoc, getDocs, getD
 import { playSound } from '../utils/helpers';
 import { generatePDF, generateCombinedPDF } from '../utils/pdfGenerator';
 import { generateSessionReport } from '../utils/sessionUtils';
-import { McqCreator, WordCloudCreator, ReviewsCreator, FeedbackCreator, QaCreator, WordleCreator, ShortFeedbackCreator } from './activities/ActivityCreators';
+import { McqCreator, WordCloudCreator, ReviewsCreator, QaCreator, WordleCreator, ShortFeedbackCreator } from './activities/ActivityCreators';
 import { IconUsers, IconChevronLeft, IconListCheck, IconCloud, IconSmile, IconMessageSquare, IconHelpCircle, IconLink, IconCopy, IconPlus, IconTrash } from './Icons';
 
 const TeacherView = ({ setView, roomCode }) => {
@@ -15,7 +15,7 @@ const TeacherView = ({ setView, roomCode }) => {
         reviews: { type: 'reviews', question: '', settings: { reviewStyle: 'emoji' } },
         feedback: { type: 'feedback', question: '', settings: { profanityFilter: true } },
         qa: { type: 'qa', questions: [{ id: 1, text: '', type: 'short', options: [], correctAnswer: '', timeLimit: 60 }], currentQuestionIndex: 0, settings: { isStudentPaced: false } },
-        wordle: { type: 'wordle', question: 'Enter the secret 5-letter word for Wordle', wordleAnswer: '', settings: { } }
+        wordle: { type: 'wordle', question: 'Enter the secret 5-letter word for Wordle', wordleAnswer: '', settings: {} }
     };
 
     // --- STATE ---
@@ -23,10 +23,10 @@ const TeacherView = ({ setView, roomCode }) => {
     const [currentActivityType, setCurrentActivityType] = useState('mcq');
     const [drafts, setDrafts] = useState(JSON.parse(JSON.stringify(DEFAULT_STATES)));
     const [sessionPassword, setSessionPassword] = useState('');
-    const [showSecret, setShowSecret] = useState(false);
-    
+
+
     // PLAYLIST STATE
-    const [playlist, setPlaylist] = useState([]); 
+    const [playlist, setPlaylist] = useState([]);
 
     // Helpers
     const activity = drafts[currentActivityType];
@@ -50,24 +50,24 @@ const TeacherView = ({ setView, roomCode }) => {
     const [codeCopied, setCodeCopied] = useState(false);
     const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
     const [allParticipants, setAllParticipants] = useState([]);
-    const [sessionHistory, setSessionHistory] = useState([]);
+
     const [completedActivities, setCompletedActivities] = useState([]);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [enableGamification, setEnableGamification] = useState(true);
-    
+
     // --- AUDIO STATE ---
     const [musicSrc, setMusicSrc] = useState('/game-music.mp3');
     const [isMusicPlaying, setIsMusicPlaying] = useState(false);
     const bgMusicRef = useRef(new Audio('/game-music.mp3'));
-    
+
     const sessionStartTimeRef = useRef(null);
 
     // --- EFFECTS ---
     useEffect(() => {
-        if(!roomCode) return;
+        if (!roomCode) return;
         const fetchPassword = async () => {
             const snap = await getDoc(doc(db, 'sessions', roomCode));
-            if(snap.exists()) setSessionPassword(snap.data().password || '');
+            if (snap.exists()) setSessionPassword(snap.data().password || '');
         };
         fetchPassword();
     }, [roomCode]);
@@ -75,10 +75,10 @@ const TeacherView = ({ setView, roomCode }) => {
     // Audio Logic
     useEffect(() => {
         const music = bgMusicRef.current;
-        music.src = musicSrc; 
+        music.src = musicSrc;
         music.loop = true;
-        music.volume = 0.3; 
-        
+        music.volume = 0.3;
+
         const updateGamificationState = async () => {
             if (!roomCode) return;
             await updateDoc(doc(db, 'sessions', roomCode), { isGamified: enableGamification }).catch(err => console.log(err));
@@ -88,10 +88,10 @@ const TeacherView = ({ setView, roomCode }) => {
             const playPromise = music.play();
             if (playPromise !== undefined) {
                 playPromise.then(() => setIsMusicPlaying(true))
-                .catch(error => {
-                    console.log("Audio Autoplay blocked. Waiting for user interaction.");
-                    setIsMusicPlaying(false);
-                });
+                    .catch(error => {
+                        console.log("Audio Autoplay blocked. Waiting for user interaction.");
+                        setIsMusicPlaying(false);
+                    });
             }
         } else {
             music.pause();
@@ -106,7 +106,7 @@ const TeacherView = ({ setView, roomCode }) => {
         const file = e.target.files[0];
         if (file) {
             const objectUrl = URL.createObjectURL(file);
-            setMusicSrc(objectUrl); 
+            setMusicSrc(objectUrl);
         }
     };
 
@@ -161,26 +161,26 @@ const TeacherView = ({ setView, roomCode }) => {
         };
         loadSession();
         const unsub = onSnapshot(collection(db, "sessions", roomCode, "completedActivities"), (snap) => {
-            setCompletedActivities(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => b.timestamp.localeCompare(a.timestamp)));
+            setCompletedActivities(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
         });
         return () => unsub();
     }, [roomCode]);
 
     // Global Wordle Stats Listener
     useEffect(() => {
-      if (!roomCode) return;
-      const unsubscribe = onSnapshot(query(collection(db, "sessions", roomCode, "wordleProgress")), (querySnapshot) => {
-        let total = 0, won = 0, lost = 0, attempting = 0;
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          total++;
-          if (data.status === "won") won++; 
-          else if (data.status === "lost") lost++; 
-          else attempting++;
+        if (!roomCode) return;
+        const unsubscribe = onSnapshot(query(collection(db, "sessions", roomCode, "wordleProgress")), (querySnapshot) => {
+            let total = 0, won = 0, lost = 0, attempting = 0;
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                total++;
+                if (data.status === "won") won++;
+                else if (data.status === "lost") lost++;
+                else attempting++;
+            });
+            setWordleStats({ total, won, lost, attempting });
         });
-        setWordleStats({ total, won, lost, attempting });
-      });
-      return () => unsubscribe();
+        return () => unsubscribe();
     }, [roomCode]);
 
     // --- LOGIC: Define Display Activity Globally ---
@@ -188,11 +188,11 @@ const TeacherView = ({ setView, roomCode }) => {
 
     const liveResults = useMemo(() => {
         if (displayActivity && displayActivity.type === 'playlist') {
-            return { total: liveResponses.length, responses: [] }; 
+            return { total: liveResponses.length, responses: [] };
         }
-        
+
         if (!displayActivity) return { total: 0, responses: [] };
-        
+
         // STRICT FILTER: Match Type AND ID
         const relevantResponses = liveResponses.filter(r => {
             if (r.type !== displayActivity.type) return false;
@@ -211,7 +211,7 @@ const TeacherView = ({ setView, roomCode }) => {
             return { total: total, responses: options.map(option => ({ option: option.text, count: validResponses.filter(r => r.answer === option.text).length })) };
         }
         if (displayActivity.type === 'reviews') {
-             const reviewOptions = displayActivity.settings.reviewStyle === 'emoji' ? ['😠', '🙁', '😐', '🙂', '😄'] : ['⭐️', '⭐️⭐️', '⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️⭐️'];
+            const reviewOptions = displayActivity.settings.reviewStyle === 'emoji' ? ['😠', '🙁', '😐', '🙂', '😄'] : ['⭐️', '⭐️⭐️', '⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️⭐️'];
             return { total: total, responses: reviewOptions.map(icon => ({ icon, count: validResponses.filter(r => r.answer === icon).length })) };
         }
         if (displayActivity.type === 'wordcloud') {
@@ -221,13 +221,13 @@ const TeacherView = ({ setView, roomCode }) => {
         }
         return { total: total, responses: validResponses };
     }, [liveResponses, displayActivity]);
-    
+
     // --- SCORING ENGINE ---
     const calculatePoints = (response, activityStartTime, isFirstResponse, enableGamification, currentLiveActivity) => {
         if (!enableGamification) return { points: 0, badges: [] };
-        
+
         let targetActivity = currentLiveActivity;
-        
+
         // Playlist Drill-Down Logic
         if (currentLiveActivity.type === 'playlist' && currentLiveActivity.queue) {
             targetActivity = currentLiveActivity.queue.find(item => item.playlistId === response.activityId) || currentLiveActivity.queue[0];
@@ -235,7 +235,7 @@ const TeacherView = ({ setView, roomCode }) => {
 
         if (!targetActivity) return { points: 10, badges: [] };
 
-        let points = 10; 
+        let points = 10;
         const badges = [];
         if (isFirstResponse) badges.push("🎯");
 
@@ -243,7 +243,7 @@ const TeacherView = ({ setView, roomCode }) => {
             const qIndex = response.questionIndex !== undefined ? response.questionIndex : (targetActivity.currentQuestionIndex || 0);
             const currentQ = targetActivity.questions?.[qIndex] || targetActivity;
             const correctOption = currentQ.options?.find((opt) => opt.isCorrect);
-            
+
             if (correctOption && response.answer.trim().toLowerCase() === correctOption.text.trim().toLowerCase()) {
                 points += 20; badges.push("✅");
                 if ((Date.now() - activityStartTime) / 1000 <= 3) { points += 15; badges.push("⚡"); }
@@ -251,7 +251,7 @@ const TeacherView = ({ setView, roomCode }) => {
         }
         if (targetActivity.type === "qa" && response.answer) {
             const wordCount = response.answer.split(" ").length;
-            if (wordCount > 50) { points += 15; badges.push("📝"); } 
+            if (wordCount > 50) { points += 15; badges.push("📝"); }
             else if (wordCount > 20) { points += 10; }
         }
         if (targetActivity.type === 'wordle' && response.answer) {
@@ -262,27 +262,27 @@ const TeacherView = ({ setView, roomCode }) => {
 
     useEffect(() => {
         if (!isSessionLive || !enableGamification || liveResponses.length === 0 || !liveActivity) return;
-        
+
         const processScores = async () => {
             const updates = [];
             const unscoredResponses = liveResponses.filter(r => !r.pointsAwarded);
             if (unscoredResponses.length === 0) return;
-            
-            const activityStartTime = sessionStartTimeRef.current || (Date.now() - 10000); 
-            const sortedResponses = [...liveResponses].sort((a,b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
+
+            const activityStartTime = sessionStartTimeRef.current || (Date.now() - 10000);
+            const sortedResponses = [...liveResponses].sort((a, b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
             const firstResponderId = sortedResponses[0]?.studentName;
 
             for (const response of unscoredResponses) {
                 if (!response.studentName) continue;
                 const isFirst = response.studentName === firstResponderId;
                 const { points, badges } = calculatePoints(response, activityStartTime, isFirst, enableGamification, liveActivity);
-                
+
                 if (points > 0) {
                     updates.push(setDoc(doc(db, 'sessions', roomCode, 'participants', response.studentName), { score: increment(points), badges: arrayUnion(...badges), lastActive: new Date() }, { merge: true }).catch(err => console.error("Score update failed")));
                     updates.push(updateDoc(doc(db, 'sessions', roomCode, 'responses', response.id), { pointsAwarded: true }));
                 }
             }
-            if(updates.length > 0) await Promise.all(updates);
+            if (updates.length > 0) await Promise.all(updates);
         };
         processScores();
     }, [liveResponses, isSessionLive, enableGamification, liveActivity, roomCode]);
@@ -291,15 +291,15 @@ const TeacherView = ({ setView, roomCode }) => {
     // --- ACTIONS ---
     // ✅ FIX: Defined delete handler to prevent crash
     const handleDeleteResponse = async (responseId) => {
-        if(!window.confirm("Delete this response?")) return;
-        try { await deleteDoc(doc(db, 'sessions', roomCode, 'responses', responseId)); } 
+        if (!window.confirm("Delete this response?")) return;
+        try { await deleteDoc(doc(db, 'sessions', roomCode, 'responses', responseId)); }
         catch (err) { console.error("Error deleting:", err); }
     };
 
     const handleAddToPlaylist = () => {
         if (currentActivityType === 'mcq' && !activity.questions[0].question) return alert("Please enter a question first.");
-        const newActivity = JSON.parse(JSON.stringify(activity)); 
-        newActivity.playlistId = Date.now(); 
+        const newActivity = JSON.parse(JSON.stringify(activity));
+        newActivity.playlistId = Date.now();
         setPlaylist([...playlist, newActivity]);
         const resetState = JSON.parse(JSON.stringify(DEFAULT_STATES[currentActivityType]));
         setDrafts(prev => ({ ...prev, [currentActivityType]: resetState }));
@@ -334,12 +334,9 @@ const TeacherView = ({ setView, roomCode }) => {
 
     const handleEndActivity = async () => {
         if (!roomCode) return;
-        let report;
-        if (liveActivity.type === 'playlist') {
-             report = generateSessionReport({ type: 'playlist_summary' }, liveResponses, sessionTopic, roomCode);
-        } else {
-             report = generateSessionReport(liveActivity, liveResponses, sessionTopic, roomCode);
-        }
+
+        // Pass the FULL liveActivity object (including queue for playlists) to the generator
+        const report = generateSessionReport(liveActivity, liveResponses, sessionTopic, roomCode);
         await setDoc(doc(db, "sessions", roomCode, "completedActivities", String(Date.now())), { timestamp: new Date().toISOString(), activityType: liveActivity.type, activityDetails: liveActivity, responses: liveResponses, report });
         await updateDoc(doc(db, "sessions", roomCode), { isSessionLive: false, currentActivity: null });
         setIsSessionLive(false);
@@ -349,7 +346,7 @@ const TeacherView = ({ setView, roomCode }) => {
     const handleCloseRoom = async () => { if (!window.confirm("Close room?")) return; await deleteDoc(doc(db, 'sessions', roomCode)); setView('home'); };
     const handleCopyCode = () => { navigator.clipboard.writeText(roomCode); setCodeCopied(true); setTimeout(() => setCodeCopied(false), 2000); };
     const handleCopyLink = () => { navigator.clipboard.writeText(`${window.location.origin}/?room=${roomCode}`); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); };
-    const handleCopyRecoveryLink = () => { navigator.clipboard.writeText(`${window.location.origin}/?room=${roomCode}&key=${sessionPassword}`); alert("Key Copied!"); };
+
 
     const handleReuseActivity = (pastActivity) => {
         if (!window.confirm("Load this previous question into the editor?")) return;
@@ -362,10 +359,10 @@ const TeacherView = ({ setView, roomCode }) => {
     const renderCreator = () => {
         // ✅ FIX: Only pass liveResults if types match, to prevent Ghost Data
         const matchingResults = (isSessionLive && liveActivity && liveActivity.type === currentActivityType && liveActivity.type !== 'playlist') ? liveResults : null;
-        
+
         // ✅ FIX: Pass the delete handler down
         const props = { activity, setActivity, liveResults: matchingResults, onDelete: handleDeleteResponse };
-        
+
         switch (currentActivityType) {
             case 'mcq': return <McqCreator {...props} />;
             case 'wordcloud': return <WordCloudCreator {...props} />;
@@ -387,7 +384,7 @@ const TeacherView = ({ setView, roomCode }) => {
                     <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/20 blur-3xl rounded-full -mr-16 -mt-16 pointer-events-none"></div>
                     <div>
                         <h3 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
-                            <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></span> 
+                            <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></span>
                             Playlist Live Monitor
                         </h3>
                         <p className="text-gray-300 font-medium">Students are progressing through {liveActivity.queue.length} activities.</p>
@@ -402,13 +399,13 @@ const TeacherView = ({ setView, roomCode }) => {
                     {liveActivity.queue.map((item, idx) => {
                         // Strict filter for playlist items
                         const itemResponses = liveResponses.filter(r => r.activityId === item.playlistId && r.type === item.type && r.answer && r.answer.trim() !== "");
-                        
+
                         return (
                             <div key={idx} className="glass-card bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all duration-300 group">
                                 <div className="bg-white/5 p-4 flex justify-between items-center border-b border-white/10">
                                     <div className="flex items-center gap-3">
                                         <div className="bg-blue-600/20 text-blue-400 p-2 rounded-lg font-bold text-xs uppercase tracking-widest">{item.type}</div>
-                                        <h4 className="text-lg font-bold text-white group-hover:text-blue-300 transition">{item.question || item.questions?.[0]?.question || `Activity #${idx+1}`}</h4>
+                                        <h4 className="text-lg font-bold text-white group-hover:text-blue-300 transition">{item.question || item.questions?.[0]?.question || `Activity #${idx + 1}`}</h4>
                                     </div>
                                     <span className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs font-bold border border-green-500/30 shadow-sm">{itemResponses.length} Responses</span>
                                 </div>
@@ -432,7 +429,7 @@ const TeacherView = ({ setView, roomCode }) => {
                                                     <div key={i} className="flex items-center gap-3 text-sm">
                                                         <div className="w-40 truncate font-medium text-gray-300">{opt.text}</div>
                                                         <div className="flex-1 bg-white/10 rounded-full h-3 overflow-hidden">
-                                                            <div className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-1000" style={{width: `${percent}%`}}></div>
+                                                            <div className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-1000" style={{ width: `${percent}%` }}></div>
                                                         </div>
                                                         <div className="w-8 text-right font-bold text-white">{count}</div>
                                                     </div>
@@ -492,7 +489,7 @@ const TeacherView = ({ setView, roomCode }) => {
                 <div className="flex items-center justify-between p-6 border-b border-white/10">
                     <div className="flex items-center">
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 rounded-lg hover:bg-white/10 transition-colors mr-3 text-white"><IconChevronLeft /></button>
-                        <button onClick={() => { if(window.confirm("Go back to Home?")) setView('home'); }} className="p-2 rounded-lg hover:bg-white/10 transition-colors mr-2 text-gray-400 hover:text-white" title="Exit">🏠</button>
+                        <button onClick={() => { if (window.confirm("Go back to Home?")) setView('home'); }} className="p-2 rounded-lg hover:bg-white/10 transition-colors mr-2 text-gray-400 hover:text-white" title="Exit">🏠</button>
                         {isSidebarOpen && <h1 className="text-xl font-bold whitespace-nowrap tracking-wider text-white">EDU<span className="text-blue-400">FLEX</span></h1>}
                     </div>
                 </div>
@@ -507,15 +504,15 @@ const TeacherView = ({ setView, roomCode }) => {
 
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col overflow-y-auto relative z-10 custom-scrollbar">
-                 {/* Glass Header */}
-                 <header className="glass-card m-4 rounded-2xl p-4 sticky top-4 z-20 flex flex-col md:flex-row gap-4 justify-between items-center">
+                {/* Glass Header */}
+                <header className="glass-card m-4 rounded-2xl p-4 sticky top-4 z-20 flex flex-col md:flex-row gap-4 justify-between items-center">
                     <div className="flex-1 w-full md:w-auto">
                         <input type="text" placeholder="Enter Session Topic..." className="w-full bg-transparent border-b-2 border-white/20 focus:border-blue-500 text-xl font-bold text-white placeholder-gray-500 outline-none px-2 py-1 text-center md:text-left transition-colors" value={sessionTopic} onChange={e => setSessionTopic(e.target.value)} />
                     </div>
-                    
+
                     <div className="flex flex-wrap items-center justify-center gap-3">
                         {/* Room Code Badge */}
-                         <div className="flex flex-col items-center bg-black/30 px-4 py-2 rounded-xl border border-white/10">
+                        <div className="flex flex-col items-center bg-black/30 px-4 py-2 rounded-xl border border-white/10">
                             <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Room Code</span>
                             <div className="flex items-center gap-2">
                                 <p className="text-2xl font-black text-white tracking-widest font-mono">{roomCode}</p>
@@ -537,11 +534,11 @@ const TeacherView = ({ setView, roomCode }) => {
 
                         <button onClick={() => setShowShareLink(true)} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg text-sm font-bold border border-white/10 transition"><IconLink /> Link</button>
                         <button onClick={() => setShowParticipants(true)} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg text-sm font-bold border border-white/10 transition"><IconUsers /> Users</button>
-                        <button onClick={() => {playSound('click'); setShowLeaderboard(true);}} className="flex items-center gap-2 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg transition transform hover:-translate-y-0.5">🏆 Leaderboard</button>
-                        
+                        <button onClick={() => { playSound('click'); setShowLeaderboard(true); }} className="flex items-center gap-2 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg transition transform hover:-translate-y-0.5">🏆 Leaderboard</button>
+
                         {/* GAMIFY TOGGLE - VISIBLE */}
                         <label className={`flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-700 border transition ${enableGamification ? 'border-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'border-gray-700'}`}>
-                            <input type="checkbox" checked={enableGamification} onChange={(e) => {setEnableGamification(e.target.checked); playSound(e.target.checked ? 'success' : 'click');}} className={`w-4 h-4 ${enableGamification ? 'accent-purple-500' : 'accent-red-600'}`} /><span>🎮 Gamify</span>
+                            <input type="checkbox" checked={enableGamification} onChange={(e) => { setEnableGamification(e.target.checked); playSound(e.target.checked ? 'success' : 'click'); }} className={`w-4 h-4 ${enableGamification ? 'accent-purple-500' : 'accent-red-600'}`} /><span>🎮 Gamify</span>
                         </label>
 
                         <button onClick={handleCloseRoom} className="bg-red-500/20 hover:bg-red-500/40 text-red-300 border border-red-500/30 px-4 py-2 rounded-lg transition font-bold text-sm">Close</button>
@@ -577,7 +574,7 @@ const TeacherView = ({ setView, roomCode }) => {
                         // STANDARD MODE: Ad-Hoc / Single
                         <>
                             {(!isSessionLive || (liveActivity && liveActivity.type !== 'playlist')) && renderCreator()}
-                            
+
                             {/* Live Activity Banner */}
                             {isSessionLive && liveActivity && (
                                 <div className="mt-8 glass-card bg-gradient-to-r from-green-900/40 to-teal-900/40 border border-green-500/30 p-6 rounded-2xl text-center animate-pulse shadow-[0_0_30px_rgba(16,185,129,0.15)]">
@@ -585,7 +582,7 @@ const TeacherView = ({ setView, roomCode }) => {
                                     <p className="text-green-200/70 font-medium">Students are currently responding...</p>
                                 </div>
                             )}
-                            
+
                             {/* Wordle Live Stats (Ad-Hoc) */}
                             {currentActivityType === 'wordle' && (
                                 <div className="mt-8 glass-card p-6 rounded-2xl border border-white/10 bg-black/20">
@@ -612,7 +609,7 @@ const TeacherView = ({ setView, roomCode }) => {
                             )}
                         </>
                     )}
-                    
+
                     {/* Inline History */}
                     {(() => {
                         const historyItems = completedActivities.filter(item => item.activityType === currentActivityType);
@@ -644,9 +641,9 @@ const TeacherView = ({ setView, roomCode }) => {
                         );
                     })()}
                 </div>
-                
+
                 {/* Footer Controls */}
-                 <footer className="glass-card m-4 p-4 rounded-2xl flex items-center justify-center sticky bottom-4 z-20 border border-white/10 shadow-2xl">
+                <footer className="glass-card m-4 p-4 rounded-2xl flex items-center justify-center sticky bottom-4 z-20 border border-white/10 shadow-2xl">
                     <div className="flex gap-4">
                         {(!isSessionLive || liveActivity?.type !== 'playlist') && (
                             <button onClick={handleAddToPlaylist} className="px-6 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-white font-bold transition flex items-center gap-2 border border-white/10">
@@ -671,9 +668,9 @@ const TeacherView = ({ setView, roomCode }) => {
                     </div>
                 </footer>
             </main>
-            
+
             {showShareLink && (<div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100"><div className="p-8"><h2 className="text-3xl font-extrabold text-gray-900 mb-2">Share Session</h2><p className="text-gray-500 mb-8 text-base">Share this link with your students to let them join the session:</p><div className="bg-gray-50 p-4 rounded-xl mb-6 border border-gray-100"><label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Shareable Link:</label><div className="flex items-center bg-gray-700 rounded-lg text-gray-200 p-3 font-mono text-sm overflow-x-auto whitespace-nowrap shadow-inner">{`${window.location.origin}/?room=${roomCode}`}</div></div><div className="bg-gray-50 p-6 rounded-xl mb-8 border border-gray-100 text-center"><label className="block text-gray-400 text-sm font-medium mb-2">Room Code:</label><div className="text-4xl font-black text-teal-500 tracking-[0.2em] drop-shadow-sm">{roomCode}</div></div><div className="space-y-3"><button onClick={handleCopyLink} className={`w-full font-bold py-4 rounded-xl text-lg flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-lg ${linkCopied ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>{linkCopied ? <span>✓ Copied!</span> : <><IconCopy /> Copy Link</>}</button><button onClick={() => setShowShareLink(false)} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 rounded-xl transition-colors">Close</button></div></div></div></div>)}
-            
+
             {showResults && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in-fast">
                     <div className="glass-card bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-xl text-white">
@@ -683,57 +680,57 @@ const TeacherView = ({ setView, roomCode }) => {
                         </div>
                         <p className="mb-6 text-gray-400 font-medium">Total Responses: <span className="text-white font-bold text-xl">{liveResults.total}</span></p>
                         <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
-                           {displayActivity.type === 'mcq' && liveResults.responses.map((res, i) => (<div key={i}><div className="flex justify-between mb-2"><span className="text-lg font-medium text-gray-200">{res.option}</span><span className="text-sm font-bold text-blue-400">{res.count} votes</span></div><div className="w-full bg-white/10 rounded-full h-4 overflow-hidden"><div className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-1000" style={{width: `${liveResults.total > 0 ? (res.count/liveResults.total)*100 : 0}%`}}></div></div></div>))}
-                           {displayActivity.type === 'reviews' && (<div className="flex justify-around items-center text-center py-4">{liveResults.responses.map((res, i) => (<div key={i} className="flex flex-col items-center gap-2"><span className="text-5xl">{res.icon}</span><span className="font-black text-2xl text-white">{res.count}</span></div>))}</div>)}
-                           {displayActivity.type === 'wordcloud' && (
-                               <div className="relative w-full min-h-[400px] p-6 bg-white/5 rounded-xl border border-white/5 overflow-hidden">
-                                   {liveResults.words.map((w, i) => {
-                                       // Enhanced size scaling: base 16px + exponential growth based on frequency
-                                       const size = Math.min(64, Math.max(16, 16 + Math.pow(w.value, 1.5) * 8));
-                                       const colors = [
-                                           'from-blue-400 to-cyan-400',
-                                           'from-purple-400 to-pink-400',
-                                           'from-green-400 to-emerald-400',
-                                           'from-orange-400 to-red-400',
-                                           'from-indigo-400 to-purple-400',
-                                           'from-teal-400 to-blue-400',
-                                           'from-yellow-400 to-orange-400',
-                                           'from-rose-400 to-pink-400'
-                                       ];
-                                       const colorClass = colors[i % colors.length];
-                                       
-                                       // Spiral placement algorithm for better distribution
-                                       const angle = i * 137.5; // Golden angle
-                                       const radius = Math.sqrt(i + 1) * 45;
-                                       const centerX = 50;
-                                       const centerY = 50;
-                                       const x = centerX + radius * Math.cos(angle * Math.PI / 180);
-                                       const y = centerY + radius * Math.sin(angle * Math.PI / 180);
-                                       
-                                       // Random rotation for natural look
-                                       const rotation = (i * 47) % 60 - 30; // -30 to +30 degrees
-                                       
-                                       return (
-                                           <span
-                                               key={i}
-                                               style={{ 
-                                                   fontSize: `${size}px`, 
-                                                   fontWeight: Math.min(900, 600 + w.value * 50),
-                                                   position: 'absolute',
-                                                   left: `${Math.max(5, Math.min(90, x))}%`,
-                                                   top: `${Math.max(10, Math.min(85, y))}%`,
-                                                   transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
-                                                   whiteSpace: 'nowrap'
-                                               }}
-                                               className={`text-transparent bg-clip-text bg-gradient-to-br ${colorClass} hover:scale-110 transition-transform cursor-default animate-fade-in`}
-                                           >
-                                               {w.text}
-                                           </span>
-                                       );
-                                   })}
-                               </div>
-                           )}
-                           {(displayActivity.type === 'feedback' || displayActivity.type === 'qa') && liveResults.responses.map((res, idx) => (<div key={idx} className="bg-white/5 p-4 rounded-xl border border-white/5 mb-3"><div className="flex justify-between items-start"><span className="font-bold text-sm text-blue-400 block mb-1">{res.studentName}</span><span className="text-[10px] text-gray-500">{new Date(res.timestamp?.seconds * 1000).toLocaleTimeString()}</span></div><p className="text-gray-200">{res.answer}</p></div>))}
+                            {displayActivity.type === 'mcq' && liveResults.responses.map((res, i) => (<div key={i}><div className="flex justify-between mb-2"><span className="text-lg font-medium text-gray-200">{res.option}</span><span className="text-sm font-bold text-blue-400">{res.count} votes</span></div><div className="w-full bg-white/10 rounded-full h-4 overflow-hidden"><div className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-1000" style={{ width: `${liveResults.total > 0 ? (res.count / liveResults.total) * 100 : 0}%` }}></div></div></div>))}
+                            {displayActivity.type === 'reviews' && (<div className="flex justify-around items-center text-center py-4">{liveResults.responses.map((res, i) => (<div key={i} className="flex flex-col items-center gap-2"><span className="text-5xl">{res.icon}</span><span className="font-black text-2xl text-white">{res.count}</span></div>))}</div>)}
+                            {displayActivity.type === 'wordcloud' && (
+                                <div className="relative w-full min-h-[400px] p-6 bg-white/5 rounded-xl border border-white/5 overflow-hidden">
+                                    {liveResults.words.map((w, i) => {
+                                        // Enhanced size scaling: base 16px + exponential growth based on frequency
+                                        const size = Math.min(64, Math.max(16, 16 + Math.pow(w.value, 1.5) * 8));
+                                        const colors = [
+                                            'from-blue-400 to-cyan-400',
+                                            'from-purple-400 to-pink-400',
+                                            'from-green-400 to-emerald-400',
+                                            'from-orange-400 to-red-400',
+                                            'from-indigo-400 to-purple-400',
+                                            'from-teal-400 to-blue-400',
+                                            'from-yellow-400 to-orange-400',
+                                            'from-rose-400 to-pink-400'
+                                        ];
+                                        const colorClass = colors[i % colors.length];
+
+                                        // Spiral placement algorithm for better distribution
+                                        const angle = i * 137.5; // Golden angle
+                                        const radius = Math.sqrt(i + 1) * 45;
+                                        const centerX = 50;
+                                        const centerY = 50;
+                                        const x = centerX + radius * Math.cos(angle * Math.PI / 180);
+                                        const y = centerY + radius * Math.sin(angle * Math.PI / 180);
+
+                                        // Random rotation for natural look
+                                        const rotation = (i * 47) % 60 - 30; // -30 to +30 degrees
+
+                                        return (
+                                            <span
+                                                key={i}
+                                                style={{
+                                                    fontSize: `${size}px`,
+                                                    fontWeight: Math.min(900, 600 + w.value * 50),
+                                                    position: 'absolute',
+                                                    left: `${Math.max(5, Math.min(90, x))}%`,
+                                                    top: `${Math.max(10, Math.min(85, y))}%`,
+                                                    transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+                                                    whiteSpace: 'nowrap'
+                                                }}
+                                                className={`text-transparent bg-clip-text bg-gradient-to-br ${colorClass} hover:scale-110 transition-transform cursor-default animate-fade-in`}
+                                            >
+                                                {w.text}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            {(displayActivity.type === 'feedback' || displayActivity.type === 'qa') && liveResults.responses.map((res, idx) => (<div key={idx} className="bg-white/5 p-4 rounded-xl border border-white/5 mb-3"><div className="flex justify-between items-start"><span className="font-bold text-sm text-blue-400 block mb-1">{res.studentName}</span><span className="text-[10px] text-gray-500">{new Date(res.timestamp?.seconds * 1000).toLocaleTimeString()}</span></div><p className="text-gray-200">{res.answer}</p></div>))}
                         </div>
                         <div className="mt-8">
                             <button onClick={() => setShowResults(false)} className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition">Close</button>
@@ -741,7 +738,7 @@ const TeacherView = ({ setView, roomCode }) => {
                     </div>
                 </div>
             )}
-            
+
             {showAnalyticsModal && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="glass-card bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-4xl max-h-[90vh] overflow-y-auto custom-scrollbar text-white">
@@ -750,9 +747,9 @@ const TeacherView = ({ setView, roomCode }) => {
                             <button onClick={() => setShowAnalyticsModal(false)} className="text-gray-400 hover:text-white text-2xl">×</button>
                         </div>
                         {completedActivities.length === 0 ? (<p className="text-gray-500 text-center py-12 text-lg">No activities have been completed yet.</p>) : (
-                            <div className="space-y-4">{completedActivities.map((act) => (<div key={act.id} className="p-6 bg-white/5 rounded-xl border border-white/5 flex justify-between items-center hover:bg-white/10 transition"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center text-blue-400 font-bold text-xl">{act.activityType.charAt(0).toUpperCase()}</div><div><p className="text-lg font-bold text-white uppercase tracking-wide">{act.activityType}</p><p className="text-sm text-gray-400">{new Date(act.timestamp).toLocaleString()}</p></div></div><button onClick={() => generatePDF(act.report)} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">Download PDF</button></div>))}</div>
+                            <div className="space-y-4">{completedActivities.map((act) => (<div key={act.id} className="p-6 bg-white/5 rounded-xl border border-white/5 flex justify-between items-center hover:bg-white/10 transition"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center text-blue-400 font-bold text-xl">{act.activityType.charAt(0).toUpperCase()}</div><div><p className="text-lg font-bold text-white uppercase tracking-wide">{act.activityType}</p><p className="text-sm text-gray-400">{new Date(act.timestamp).toLocaleString()}</p></div></div><button onClick={() => Array.isArray(act.report) ? generateCombinedPDF(act.report) : generatePDF(act.report)} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">Download PDF</button></div>))}</div>
                         )}
-                        {completedActivities.length > 0 && (<button onClick={() => generateCombinedPDF(completedActivities.map(a => a.report))} className="w-full mt-8 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white py-4 rounded-xl font-bold shadow-lg transition">📘 Download Full Session Report (All Activities)</button>)}
+                        {completedActivities.length > 0 && (<button onClick={() => generateCombinedPDF([...completedActivities].reverse().map(a => a.report).flat())} className="w-full mt-8 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white py-4 rounded-xl font-bold shadow-lg transition">📘 Download Full Session Report (All Activities)</button>)}
                     </div>
                 </div>
             )}

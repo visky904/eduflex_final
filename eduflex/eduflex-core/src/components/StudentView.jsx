@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { doc, onSnapshot, collection, addDoc, getDoc, setDoc } from 'firebase/firestore'; 
+import { doc, onSnapshot, collection, addDoc, getDoc, setDoc } from 'firebase/firestore';
 import { playSound, filterProfanity } from '../utils/helpers';
 import { WordleGame } from './WordleGame';
 
@@ -43,14 +43,14 @@ const Confetti = () => {
 const StudentView = ({ setView, initialJoinCode }) => {
     const [enteredCode, setEnteredCode] = useState(initialJoinCode || '');
     const [studentName, setStudentName] = useState('');
-    const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]); 
-    
+    const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
+
     const [joined, setJoined] = useState(false);
     const [submitted, setSubmitted] = useState(false);
-    
+
     // NAVIGATION STATE
-    const [localIndex, setLocalIndex] = useState(0); 
-    const [playlistIndex, setPlaylistIndex] = useState(0); 
+    const [localIndex, setLocalIndex] = useState(0);
+    const [playlistIndex, setPlaylistIndex] = useState(0);
     const [lastActivityId, setLastActivityId] = useState(null);
 
     const [feedbackText, setFeedbackText] = useState("");
@@ -74,7 +74,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
         const music = bgMusicRef.current;
         music.loop = true;
         music.volume = 0.3;
-        if (joined && sessionData.isGamified) { music.play().catch(e => console.log("Audio blocked")); } 
+        if (joined && sessionData.isGamified) { music.play().catch(e => console.log("Audio blocked")); }
         else { music.pause(); }
         return () => music.pause();
     }, [joined, sessionData.isGamified]);
@@ -108,26 +108,26 @@ const StudentView = ({ setView, initialJoinCode }) => {
     useEffect(() => {
         if (sessionData.isSessionLive && sessionData.currentActivity) {
             const serverActivityId = sessionData.currentActivity.activityId;
-            
+
             if (serverActivityId && serverActivityId !== lastActivityId) {
-                setSubmitted(false); 
-                setFeedbackText(""); 
+                setSubmitted(false);
+                setFeedbackText("");
                 setLastActivityId(serverActivityId);
-                setLocalIndex(0); 
+                setLocalIndex(0);
                 setPlaylistIndex(0);
-            } 
-            
+            }
+
             if (!isStudentPacedQuestions && !isPlaylistMode) {
-                 const serverQIndex = sessionData.currentActivity.currentQuestionIndex || 0;
-                 if (serverQIndex !== lastServerIndexRef.current) {
-                     setSubmitted(false);
-                     setFeedbackText("");
-                     lastServerIndexRef.current = serverQIndex;
-                 }
+                const serverQIndex = sessionData.currentActivity.currentQuestionIndex || 0;
+                if (serverQIndex !== lastServerIndexRef.current) {
+                    setSubmitted(false);
+                    setFeedbackText("");
+                    lastServerIndexRef.current = serverQIndex;
+                }
             }
         }
     }, [sessionData, lastActivityId, isStudentPacedQuestions, isPlaylistMode]);
-    
+
     const lastServerIndexRef = useRef(-1);
 
     useEffect(() => {
@@ -146,7 +146,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
     useEffect(() => {
         if (!currentActivity || submitted) { setTimeLeft(null); setAutoSubmitTriggered(false); return; }
         const currentQuestion = currentActivity.questions?.[currentQuestionIndex];
-        
+
         if (currentQuestion?.timeLimit && currentActivity.type === 'qa') {
             setTimeLeft(currentQuestion.timeLimit);
             setAutoSubmitTriggered(false);
@@ -169,11 +169,12 @@ const StudentView = ({ setView, initialJoinCode }) => {
             });
         }, 1000);
         return () => clearInterval(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentActivity, submitted, autoSubmitTriggered, currentQuestionIndex]);
 
     const handleJoin = async (e) => {
         e.preventDefault();
-        setError(""); 
+        setError("");
         if (!studentName.trim()) { setError("Please enter your name."); return; }
         if (!enteredCode) { setError("Please enter a room code."); return; }
         const sessionRef = doc(db, 'sessions', enteredCode.toUpperCase());
@@ -186,12 +187,12 @@ const StudentView = ({ setView, initialJoinCode }) => {
             } else { setError("Invalid Room Code."); }
         } catch (err) { console.error(err); setError("Connection failed."); }
     };
-    
+
     useEffect(() => {
-        if (!enteredCode) return; 
+        if (!enteredCode) return;
         const sessionRef = doc(db, 'sessions', enteredCode.toUpperCase());
         const unsubscribe = onSnapshot(sessionRef, (docSnap) => {
-            if (docSnap.exists()) { setSessionData(docSnap.data()); } 
+            if (docSnap.exists()) { setSessionData(docSnap.data()); }
             else if (joined) { alert("Session ended."); setView('home'); }
         });
         return () => unsubscribe();
@@ -217,48 +218,48 @@ const StudentView = ({ setView, initialJoinCode }) => {
                 studentName: studentName,
                 type: currentActivity.type,
                 // CRITICAL FIX: Send playlistId so TeacherView knows which item was answered
-                activityId: currentActivity.playlistId || 'single', 
+                activityId: currentActivity.playlistId || 'single',
                 questionIndex: currentQuestionIndex,
                 timestamp: new Date()
             });
             setSubmitted(true);
         } catch (error) { console.error("Submit error:", error); }
     };
-    
+
     const handleNext = () => {
         const totalQuestions = currentActivity.questions?.length || 1;
-        
+
         if (currentQuestionIndex < totalQuestions - 1) {
             setLocalIndex(prev => prev + 1);
             setSubmitted(false);
             setFeedbackText("");
-            window.scrollTo(0,0);
+            window.scrollTo(0, 0);
             return;
         }
 
         if (isPlaylistMode && sessionData.currentActivity.queue && playlistIndex < sessionData.currentActivity.queue.length - 1) {
             setPlaylistIndex(prev => prev + 1);
-            setLocalIndex(0); 
+            setLocalIndex(0);
             setSubmitted(false);
             setFeedbackText("");
-            window.scrollTo(0,0);
+            window.scrollTo(0, 0);
             return;
         }
     };
 
     const renderActivity = () => {
         if (!currentActivity) return <p>Waiting for teacher...</p>;
-        
+
         const totalQuestions = currentActivity.questions?.length || 1;
         const isLastQuestion = currentQuestionIndex >= totalQuestions - 1;
         const isLastActivity = !isPlaylistMode || (playlistIndex >= sessionData.currentActivity.queue.length - 1);
-        
-        if(submitted) {
+
+        if (submitted) {
             return (
                 <div className="text-center animate-fade-in py-8">
                     <div className="text-6xl mb-4">🚀</div>
                     <h2 className="text-3xl font-bold text-gray-800">Answer Sent!</h2>
-                    
+
                     {((!isLastQuestion) || (isPlaylistMode && !isLastActivity)) ? (
                         <div className="mt-6">
                             <button onClick={handleNext} className="bg-teal-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg hover:bg-teal-700 transform transition hover:scale-105">
@@ -276,21 +277,21 @@ const StudentView = ({ setView, initialJoinCode }) => {
                 </div>
             )
         }
-        
+
         const currentQData = currentActivity.questions?.[currentQuestionIndex] || currentActivity;
 
-        switch(currentActivity.type) {
+        switch (currentActivity.type) {
             case 'mcq':
                 return (
                     <div className="w-full animate-fade-in">
                         {isPlaylistMode && <span className="block text-xs text-gray-400 mb-2 uppercase tracking-wide">Activity {playlistIndex + 1} / {sessionData.currentActivity.queue.length}</span>}
                         {totalQuestions > 1 && <span className="inline-block bg-teal-100 text-teal-800 px-3 py-1 rounded-full text-sm font-bold mb-4">Question {currentQuestionIndex + 1} / {totalQuestions}</span>}
                         <h2 className="text-2xl font-bold text-gray-800 mb-6">{currentQData.question}</h2>
-                        {currentQData.image && <img src={currentQData.image} alt="activity" className="rounded-lg mb-6 max-h-64 w-auto mx-auto shadow-md"/>}
+                        {currentQData.image && <img src={currentQData.image} alt="activity" className="rounded-lg mb-6 max-h-64 w-auto mx-auto shadow-md" />}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {(currentQData.options || []).map((opt, i) => (
                                 <button key={i} onClick={() => handleSubmit(opt.text)} className="p-4 bg-white border-2 border-gray-200 text-gray-700 font-bold rounded-xl shadow-sm hover:border-teal-500 hover:bg-teal-50 hover:shadow-md transition-all transform hover:-translate-y-1 text-lg text-left">
-                                    <span className="inline-block w-8 h-8 bg-gray-100 rounded-full text-center leading-8 mr-3 text-sm text-gray-500">{String.fromCharCode(65+i)}</span>
+                                    <span className="inline-block w-8 h-8 bg-gray-100 rounded-full text-center leading-8 mr-3 text-sm text-gray-500">{String.fromCharCode(65 + i)}</span>
                                     {opt.text}
                                 </button>
                             ))}
@@ -299,26 +300,26 @@ const StudentView = ({ setView, initialJoinCode }) => {
                 );
             case 'wordcloud':
             case 'feedback':
-                 return (
+                return (
                     <div className="w-full animate-fade-in">
                         {isPlaylistMode && <span className="block text-xs text-gray-400 mb-2 uppercase tracking-wide">Activity {playlistIndex + 1} / {sessionData.currentActivity.queue.length}</span>}
                         <h2 className="text-2xl font-bold text-gray-800 mb-4">{currentActivity.question}</h2>
-                        {currentActivity.image && <img src={currentActivity.image} alt="activity" className="rounded-lg mb-4 max-h-64 w-auto mx-auto"/>}
-                        <form onSubmit={(e) => {e.preventDefault(); handleSubmit(feedbackText)}}>
+                        {currentActivity.image && <img src={currentActivity.image} alt="activity" className="rounded-lg mb-4 max-h-64 w-auto mx-auto" />}
+                        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(feedbackText) }}>
                             <textarea className="w-full p-4 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition text-lg" rows="4" placeholder="Type your answer here..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)}></textarea>
                             <button type="submit" className="w-full mt-4 bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 transition shadow-lg transform active:scale-95">Submit Answer</button>
                         </form>
                     </div>
                 );
-             case 'reviews':
-                 const reviewOptions = currentActivity.settings.reviewStyle === 'emoji' ? ['😠', '🙁', '😐', '🙂', '😄'] : ['⭐️', '⭐️⭐️', '⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️⭐️'];
+            case 'reviews':
+                const reviewOptions = currentActivity.settings.reviewStyle === 'emoji' ? ['😠', '🙁', '😐', '🙂', '😄'] : ['⭐️', '⭐️⭐️', '⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️⭐️'];
                 return (
                     <div className="w-full animate-fade-in text-center">
-                         {isPlaylistMode && <span className="block text-xs text-gray-400 mb-2 uppercase tracking-wide">Activity {playlistIndex + 1} / {sessionData.currentActivity.queue.length}</span>}
-                         <h2 className="text-2xl font-bold text-gray-800 mb-8">{currentActivity.question}</h2>
-                         <div className="flex justify-center gap-4 flex-wrap">
-                             {reviewOptions.map((opt, i) => (<button key={i} onClick={() => handleSubmit(opt)} className="text-5xl p-4 rounded-2xl hover:bg-gray-100 transition-all transform hover:scale-125 duration-200">{opt}</button>))}
-                         </div>
+                        {isPlaylistMode && <span className="block text-xs text-gray-400 mb-2 uppercase tracking-wide">Activity {playlistIndex + 1} / {sessionData.currentActivity.queue.length}</span>}
+                        <h2 className="text-2xl font-bold text-gray-800 mb-8">{currentActivity.question}</h2>
+                        <div className="flex justify-center gap-4 flex-wrap">
+                            {reviewOptions.map((opt, i) => (<button key={i} onClick={() => handleSubmit(opt)} className="text-5xl p-4 rounded-2xl hover:bg-gray-100 transition-all transform hover:scale-125 duration-200">{opt}</button>))}
+                        </div>
                     </div>
                 );
             case 'qa':
@@ -330,7 +331,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                             <h2 className="text-2xl font-bold text-gray-800 mb-2">{currentQData.text}</h2>
                             {timeLeft !== null && <div className="inline-block bg-yellow-100 text-yellow-800 px-3 py-1 rounded-lg font-mono font-bold">⏱️ {timeLeft}s remaining</div>}
                         </div>
-                        <form onSubmit={(e) => {e.preventDefault(); handleSubmit(feedbackText)}}>
+                        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(feedbackText) }}>
                             {currentQData.type === 'short' ? (<input type="text" className="w-full p-4 border-2 border-gray-300 rounded-xl focus:border-teal-500 text-lg" placeholder="Type answer..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} />) : currentQData.type === 'long' ? (<textarea className="w-full p-4 border-2 border-gray-300 rounded-xl focus:border-teal-500 text-lg" rows="5" placeholder="Type answer..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)}></textarea>) : (<div className="space-y-3">{(currentQData.options || []).map((opt, idx) => (<button key={idx} type="button" onClick={() => handleSubmit(opt)} className="w-full p-4 bg-white border-2 border-gray-200 text-gray-800 font-bold rounded-xl hover:bg-teal-50 hover:border-teal-500 text-left transition">{opt}</button>))}</div>)}
                             {currentQData.type !== 'multiple' && <button type="submit" className="w-full mt-6 bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 shadow-lg">Submit Answer</button>}
                         </form>
@@ -338,9 +339,9 @@ const StudentView = ({ setView, initialJoinCode }) => {
                 );
             case 'wordle':
                 return (
-                    <WordleGame 
-                        word={currentActivity.wordleAnswer?.toUpperCase() || ''} 
-                        roomCode={enteredCode} 
+                    <WordleGame
+                        word={currentActivity.wordleAnswer?.toUpperCase() || ''}
+                        roomCode={enteredCode}
                         studentId={studentName}
                         onGameEnd={(winningWord) => { triggerConfetti(); if (!submitted) { handleSubmit(winningWord); } }}
                     />
@@ -351,7 +352,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
 
     if (!joined) {
         return (
-             <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-black flex flex-col items-center justify-center p-4">
+            <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-black flex flex-col items-center justify-center p-4">
                 <div className="w-full max-w-md bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border-t-8 border-purple-500">
                     <h1 className="text-3xl font-extrabold text-center text-gray-800 mb-2">Student Join</h1>
                     <p className="text-center text-gray-500 mb-6">Pick your hero and enter the arena!</p>
@@ -362,7 +363,7 @@ const StudentView = ({ setView, initialJoinCode }) => {
                         {error && <p className="text-red-500 text-center font-bold">{error}</p>}
                         <button type="submit" className="w-full bg-purple-600 text-white font-bold py-4 rounded-xl hover:bg-purple-700 transition shadow-lg transform active:scale-95 text-lg">Ready to Play! 🚀</button>
                     </form>
-                     <button onClick={() => setView('home')} className="mt-6 w-full text-gray-400 hover:text-purple-600 transition text-sm">Back to Home</button>
+                    <button onClick={() => setView('home')} className="mt-6 w-full text-gray-400 hover:text-purple-600 transition text-sm">Back to Home</button>
                 </div>
             </div>
         )
