@@ -270,8 +270,8 @@ function generateActivitySection(report) {
                         <tr>
                             <td>${sa.name}</td>
                             <td>${sa.answer}</td>
-                            <td class="${sa.isCorrect ? 'correct' : 'incorrect'}">
-                                ${sa.isCorrect ? '✅ Correct' : '❌ Incorrect'}
+                            <td class="${sa.isCorrect ? 'correct' : (report.analysis.correctAnswer ? 'incorrect' : '')}">
+                                ${sa.isCorrect ? '✅ Correct' : (report.analysis.correctAnswer ? '❌ Incorrect' : '➖')}
                             </td>
                         </tr>
                     `).join('')}
@@ -374,7 +374,7 @@ function generateActivitySection(report) {
                 <tbody>
                     ${Object.entries(report.analysis.distribution).sort((a, b) => b[0] - a[0]).map(([rating, count]) => `
                         <tr>
-                            <td>${'⭐'.repeat(parseInt(rating))}</td>
+                            <td>${rating}</td>
                             <td>${count}</td>
                             <td>${((count / report.analysis.totalResponses) * 100).toFixed(1)}%</td>
                         </tr>

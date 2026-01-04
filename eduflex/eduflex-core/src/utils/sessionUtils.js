@@ -120,24 +120,37 @@ export const generateSessionReport = (activity, responses, topic, roomCode) => {
 
         case 'reviews':
             const reviewCounts = {};
+            const isEmoji = activity.settings?.reviewStyle === 'emoji';
+            const reviewOptions = isEmoji
+                ? ['😠', '🙁', '😐', '🙂', '😄']
+                : ['⭐️', '⭐️⭐️', '⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️', '⭐️⭐️⭐️⭐️⭐️'];
+
             responses.forEach(r => {
                 if (r.answer) reviewCounts[r.answer] = (reviewCounts[r.answer] || 0) + 1;
             });
+
+            // Calculate numeric rating (1-5) based on index
+            const calculateRating = (answer) => {
+                if (!answer) return 0;
+                const index = reviewOptions.indexOf(answer);
+                return index !== -1 ? index + 1 : 0;
+            };
+
+            const totalScore = responses.reduce((sum, r) => sum + calculateRating(r.answer), 0);
             const avgRating = responses.length > 0
-                ? (responses.reduce((sum, r) => {
-                    const rating = r.answer ? r.answer.length : 0;
-                    return sum + rating;
-                }, 0) / responses.length).toFixed(1)
+                ? (totalScore / responses.length).toFixed(1)
                 : 0;
+
             report.analysis = {
                 question: activity.question || "Review",
                 totalResponses: responses.length,
                 totalReviews: responses.length,
                 averageRating: avgRating,
                 distribution: reviewCounts,
+                // Pass pre-calculated numeric ratings (1-5)
                 individualRatings: responses.map(r => ({
                     name: r.studentName || 'Anonymous',
-                    rating: r.answer ? r.answer.length : 0
+                    rating: calculateRating(r.answer)
                 })),
                 reviews: responses.map(r => ({
                     name: r.studentName || 'Anonymous',
