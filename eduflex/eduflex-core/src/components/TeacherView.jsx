@@ -22,7 +22,7 @@ const TeacherView = ({ setView, roomCode }) => {
     const [sessionTopic, setSessionTopic] = useState('');
     const [currentActivityType, setCurrentActivityType] = useState('mcq');
     const [drafts, setDrafts] = useState(JSON.parse(JSON.stringify(DEFAULT_STATES)));
-    const [sessionPassword, setSessionPassword] = useState('');
+    const [, setSessionPassword] = useState('');
 
 
     // PLAYLIST STATE
