@@ -1,0 +1,5 @@
+com\example\eduflex_core\model\Session.class
+com\example\eduflex_core\config\WebSocketConfig.class
+com\example\eduflex_core\EduflexCoreApplication.class
+com\example\eduflex_core\controller\SessionRestController.class
+com\example\eduflex_core\controller\SessionController.class
